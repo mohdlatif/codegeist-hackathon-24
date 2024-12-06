@@ -1,7 +1,7 @@
 modules:
   jira:issuePanel:
     - key: resolveai-hello-world-issue-panel
-      resource: main
+      resource: issuePanel
       resolver:
         function: resolver
       render: native
@@ -9,7 +9,7 @@ modules:
       icon: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
   jira:projectSettingsPage:
     - key: resolveai-hello-world-project-settings-page
-      resource: main
+      resource: projectSettings
       resolver:
         function: resolver
       render: native
@@ -18,8 +18,10 @@ modules:
     - key: resolver
       handler: index.handler
 resources:
-  - key: main
-    path: src/frontend/setting.jsx
+  - key: issuePanel
+    path: src/frontend/IssuePanel.jsx
+  - key: projectSettings
+    path: src/frontend/ProjectSettings.jsx
 permissions:
   scopes:
     - read:jira-work
