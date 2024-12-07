@@ -35,12 +35,32 @@ const App = () => {
     invoke("getUsers")
       .then(setUsers)
       .catch((err) => setError(err));
+
+    invoke("getSelectedUser")
+      .then((storedUser) => {
+        if (storedUser) {
+          setSelectedUser(storedUser);
+        }
+      })
+      .catch((err) => setError(err));
   }, []);
 
   const handleSavePages = async () => {
     setIsLoading(true);
     try {
       await invoke("saveSelectedPages", { pageIds: selectedPages });
+    } catch (err) {
+      setError(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUserChange = async (value) => {
+    setSelectedUser(value);
+    setIsLoading(true);
+    try {
+      await invoke("saveSelectedUser", { userId: value });
     } catch (err) {
       setError(err);
     } finally {
@@ -67,12 +87,9 @@ const App = () => {
           options={users.map((user) => ({
             label: user.displayName,
             value: user.accountId,
-            userData: {
-              emailAddress: user.emailAddress,
-            },
           }))}
           value={selectedUser}
-          onChange={(value) => setSelectedUser(value)}
+          onChange={handleUserChange}
           placeholder="Select user"
           isSearchable={true}
           isRequired={true}

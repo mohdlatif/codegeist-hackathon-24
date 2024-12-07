@@ -77,7 +77,7 @@ resolver.define("getUsers", async () => {
     const response = await api
       .asUser()
       .requestJira(
-        route`/rest/api/3/users/search?maxResults=100&expand=groups,applicationRoles,emailAddress`,
+        route`/rest/api/3/users/search?maxResults=100&expand=groups,applicationRoles`,
         {
           headers: {
             Accept: "application/json",
@@ -86,16 +86,35 @@ resolver.define("getUsers", async () => {
       );
 
     const users = await response.json();
+    // console.log("Users:", users);
     const filteredUsers = users.filter(
-      (user) =>
-        user.accountType === "atlassian" &&
-        user.active === true &&
-        user.emailAddress
+      (user) => user.accountType === "atlassian" && user.active === true
     );
     // console.log("Filtered Users:", filteredUsers);
     return filteredUsers;
   } catch (error) {
     console.error("Error fetching users:", error);
+    throw error;
+  }
+});
+
+resolver.define("saveSelectedUser", async ({ payload }) => {
+  try {
+    const { userId } = payload;
+    await storage.set("selectedUser", userId);
+    return true;
+  } catch (error) {
+    console.error("Error saving selected user:", error);
+    throw error;
+  }
+});
+
+resolver.define("getSelectedUser", async () => {
+  try {
+    const userId = await storage.get("selectedUser");
+    return userId;
+  } catch (error) {
+    console.error("Error fetching selected user:", error);
     throw error;
   }
 });
