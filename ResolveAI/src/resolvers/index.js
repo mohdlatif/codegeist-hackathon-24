@@ -3,10 +3,10 @@ import api, { route, storage } from "@forge/api";
 
 const resolver = new Resolver();
 
-resolver.define("getText", (req) => {
-  // console.log(req);
-  return "Hello, world!";
-});
+// resolver.define("getText", (req) => {
+//   // console.log(req);
+//   return "Hello, world!";
+// });
 
 resolver.define("getPages", async () => {
   try {
@@ -44,10 +44,10 @@ resolver.define("getSavedPages", async () => {
 
     // Fetch details for saved pages
     const savedPages = await Promise.all(
-      pageIds.map(async (id) => {
+      pageIds.map(async (pageId) => {
         const response = await api
           .asUser()
-          .requestConfluence(route`/wiki/api/v2/pages/${id}`, {
+          .requestConfluence(route`/wiki/api/v2/pages/${pageId.toString()}`, {
             headers: {
               Accept: "application/json",
             },
@@ -58,6 +58,44 @@ resolver.define("getSavedPages", async () => {
     return savedPages;
   } catch (error) {
     console.error("Error fetching saved pages:", error);
+    throw error;
+  }
+});
+
+resolver.define("getSelectedPages", async () => {
+  try {
+    const pageIds = (await storage.get("selectedPages")) || [];
+    return pageIds;
+  } catch (error) {
+    console.error("Error fetching selected pages:", error);
+    throw error;
+  }
+});
+
+resolver.define("getUsers", async () => {
+  try {
+    const response = await api
+      .asUser()
+      .requestJira(
+        route`/rest/api/3/users/search?maxResults=100&expand=groups,applicationRoles,emailAddress`,
+        {
+          headers: {
+            Accept: "application/json",
+          },
+        }
+      );
+
+    const users = await response.json();
+    const filteredUsers = users.filter(
+      (user) =>
+        user.accountType === "atlassian" &&
+        user.active === true &&
+        user.emailAddress
+    );
+    // console.log("Filtered Users:", filteredUsers);
+    return filteredUsers;
+  } catch (error) {
+    console.error("Error fetching users:", error);
     throw error;
   }
 });
