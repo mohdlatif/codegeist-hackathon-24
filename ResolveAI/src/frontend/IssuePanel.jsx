@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import ForgeReconciler, { Text } from "@forge/react";
+import ForgeReconciler, { Text, Button } from "@forge/react";
 import { invoke } from "@forge/bridge";
 
 const App = () => {
@@ -12,6 +12,16 @@ const App = () => {
       .catch((err) => setError(err));
   }, []);
 
+  const handleExampleRequest = async () => {
+    try {
+      const response = await invoke("makeExampleRequest");
+      console.log("Button clicked, response received:", response);
+    } catch (err) {
+      console.error("Error making example request:", err);
+      setError(err);
+    }
+  };
+
   if (error) {
     return <Text>Error loading saved pages: {error.message}</Text>;
   }
@@ -22,6 +32,7 @@ const App = () => {
 
   return (
     <>
+      <Button text="Make Example Request" onClick={handleExampleRequest} />
       <Text>Saved Confluence Pages:</Text>
       {savedPages.map((page) => (
         <Text key={page.id}>{page.title}</Text>

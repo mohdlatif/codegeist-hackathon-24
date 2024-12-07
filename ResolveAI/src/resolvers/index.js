@@ -119,4 +119,56 @@ resolver.define("getSelectedUser", async () => {
   }
 });
 
+resolver.define("makeExampleRequest", async () => {
+  try {
+    // Using fetch to make a request to a third-party API
+    // Example using a public API (JSONPlaceholder)
+    const response = await api.fetch(
+      "https://jsonplaceholder.typicode.com/posts/1",
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log("Third-party API response:", data);
+    return data;
+  } catch (error) {
+    console.error("Error making third-party request:", error);
+    throw error;
+  }
+});
+
+resolver.define("saveCloudflareCredentials", async ({ payload }) => {
+  try {
+    const { accountId, email, apiKey } = payload;
+    await storage.set("cloudflare_account_id", accountId);
+    await storage.set("cloudflare_email", email);
+    await storage.set("cloudflare_api_key", apiKey);
+    return true;
+  } catch (error) {
+    console.error("Error saving Cloudflare credentials:", error);
+    throw error;
+  }
+});
+
+resolver.define("getCloudflareCredentials", async () => {
+  try {
+    const accountId = await storage.get("cloudflare_account_id");
+    const email = await storage.get("cloudflare_email");
+    const apiKey = await storage.get("cloudflare_api_key");
+    return { accountId, email, apiKey };
+  } catch (error) {
+    console.error("Error fetching Cloudflare credentials:", error);
+    throw error;
+  }
+});
+
 export const handler = resolver.getDefinitions();
