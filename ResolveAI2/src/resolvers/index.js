@@ -1,6 +1,7 @@
 import Resolver from "@forge/resolver";
 import api, { route, storage } from "@forge/api";
 import validator from "validator";
+import Cloudflare from "cloudflare";
 
 const resolver = new Resolver();
 
@@ -126,6 +127,12 @@ resolver.define("saveCloudflareCredentials", async ({ payload }) => {
     await storage.set("cloudflare_account_id", accountId);
     await storage.set("cloudflare_email", email);
     await storage.set("cloudflare_api_key", apiKey);
+
+    console.log("Cloudflare credentials saved successfully");
+    // console.log("Account ID:", await storage.get("cloudflare_account_id"));
+    // console.log("Email:", await storage.get("cloudflare_email"));
+    // console.log("API Key:", await storage.get("cloudflare_api_key"));
+
     return { success: true };
   } catch (error) {
     console.error("Error saving Cloudflare credentials:", error);
@@ -163,7 +170,7 @@ resolver.define("verifyCloudflareToken", async ({ payload }) => {
     );
 
     const data = await response.json();
-    console.log("Cloudflare token verification response:", data);
+    // console.log("Cloudflare token verification response:", data);
     return data;
   } catch (error) {
     console.error("Error verifying Cloudflare token:", error);
@@ -284,87 +291,34 @@ resolver.define("getSavedPagesContent", async () => {
 });
 
 /* --------------------- Vectorize ---------------------  */
-resolver.define("initializeVectorIndex", async () => {
-  try {
-    const accountId = await storage.get("cloudflare_account_id");
-    const apiKey = await storage.get("cloudflare_api_key");
-
-    if (!accountId || !apiKey) {
-      return {
-        success: false,
-        message: "Please save your Cloudflare credentials first",
-      };
-    }
-
-    // First, check if index exists - Updated URL with v2
-    const response = await api.fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${INDEX_NAME}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    if (response.status === 404) {
-      // Create new index if it doesn't exist - Updated URL with v2
-      const createResponse = await api.fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name: INDEX_NAME,
-            description: "Confluence pages vector index",
-            config: {
-              dimensions: 1536,
-              metric: "cosine",
-            },
-          }),
-        }
-      );
-
-      const createResult = await createResponse.json();
-      if (!createResult.success) {
-        return {
-          success: false,
-          message: `Failed to create index: ${createResult.errors?.[0]?.message}`,
-        };
-      }
-    }
-
-    return { success: true };
-  } catch (error) {
-    console.error("Error initializing vector index:", error);
-    return {
-      success: false,
-      message: "Failed to initialize vector index. Please try again.",
-    };
-  }
-});
-
 resolver.define("vectorizePages", async () => {
   try {
     console.log("Starting vectorization process...");
 
     const accountId = await storage.get("cloudflare_account_id");
     const apiKey = await storage.get("cloudflare_api_key");
-    console.log("Credentials retrieved:", {
-      accountId: !!accountId,
-      apiKey: !!apiKey,
+    const email = await storage.get("cloudflare_email");
+
+    // Add more detailed logging of credentials
+    console.log("Raw credentials from storage:", {
+      accountId: accountId?.substring(0, 4),
+      apiKeyLength: apiKey?.length,
+      apiKeyStart: apiKey?.substring(0, 4),
+      email: email?.substring(0, 4),
     });
 
-    if (!accountId || !apiKey) {
+    if (!accountId || !apiKey || !email) {
       return {
         success: false,
         message: "Please save your Cloudflare credentials first",
       };
     }
+
+    // Initialize Cloudflare client with simple configuration
+    const client = new Cloudflare({
+      apiEmail: email,
+      apiKey: apiKey,
+    });
 
     // Call getSavedPagesContent directly
     console.log("Fetching pages content...");
@@ -378,33 +332,44 @@ resolver.define("vectorizePages", async () => {
       };
     }
 
-    // Call initializeVectorIndex directly
-    console.log("Initializing vector index...");
-    const initResult = await initializeVectorIndex();
-    console.log("Index initialization result:", initResult);
-
-    if (!initResult.success) {
-      return initResult;
+    // Check if index exists
+    console.log("Checking index...", INDEX_NAME);
+    try {
+      await client.vectorize.indexes.get(INDEX_NAME, {
+        account_id: accountId,
+      });
+    } catch (error) {
+      if (error.status === 404) {
+        console.log("Creating new index...");
+        console.log("Account ID:", accountId);
+        console.log("Index Name:", INDEX_NAME);
+        await client.vectorize.indexes.create({
+          account_id: accountId,
+          name: INDEX_NAME,
+          description: "Confluence pages vector index",
+          config: {
+            dimensions: 1536,
+            metric: "cosine",
+          },
+        });
+      } else {
+        console.error("Error checking index:", error);
+      }
     }
 
-    // Prepare vectors in NDJSON format
+    // Prepare vectors
     console.log("Preparing vectors...");
-    const vectorsNDJSON = pages
-      .map((page) => ({
-        id: page.id.toString(),
-        values: Array(1536)
-          .fill(0)
-          .map(() => Math.random() * 2 - 1),
-        metadata: JSON.stringify({
-          title: page.title,
-          content: page.body.substring(0, 1000),
-          last_updated: new Date().toISOString(),
-        }),
-      }))
-      .map((vector) => JSON.stringify(vector))
-      .join("\n");
-
-    console.log("Sample NDJSON line:", vectorsNDJSON.split("\n")[0]);
+    const vectors = pages.map((page) => ({
+      id: page.id.toString(),
+      values: Array(1536)
+        .fill(0)
+        .map(() => Math.random() * 2 - 1),
+      metadata: JSON.stringify({
+        title: page.title,
+        content: page.body.substring(0, 1000),
+        last_updated: new Date().toISOString(),
+      }),
+    }));
 
     // Handle deleted pages
     console.log("Checking for deleted pages...");
@@ -416,51 +381,24 @@ resolver.define("vectorizePages", async () => {
 
     if (deletedPageIds.length > 0) {
       console.log("Deleting old vectors...");
-      const deleteResponse = await api.fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${INDEX_NAME}/delete_by_ids`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            ids: deletedPageIds.map((id) => id.toString()),
-          }),
-        }
-      );
-
-      if (!deleteResponse.ok) {
-        console.error("Delete failed:", await deleteResponse.text());
-        return {
-          success: false,
-          message: "Failed to remove old vectors",
-        };
-      }
+      await client.vectorize.indexes.deleteByIds(INDEX_NAME, {
+        account_id: accountId,
+        ids: deletedPageIds.map((id) => id.toString()),
+      });
     }
 
-    // Upsert vectors with NDJSON format
-    console.log("Upserting vectors to Cloudflare...");
-    const upsertResponse = await api.fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${INDEX_NAME}/upsert`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/x-ndjson", // Changed content type
-        },
-        body: vectorsNDJSON, // Send NDJSON directly
-      }
-    );
+    // Upsert vectors
+    console.log("Upserting vectors...");
+    const upsertResult = await client.vectorize.indexes.upsert(INDEX_NAME, {
+      account_id: accountId,
+      vectors: vectors,
+    });
 
-    console.log("Upsert response status:", upsertResponse.status);
-    const responseText = await upsertResponse.text();
-    console.log("Upsert response text:", responseText);
-
-    if (!upsertResponse.ok) {
+    if (!upsertResult.success) {
+      console.error("Upsert failed:", upsertResult);
       return {
         success: false,
-        message: `Failed to upsert vectors: ${responseText}`,
+        message: "Failed to upsert vectors",
       };
     }
 
@@ -563,69 +501,6 @@ async function getSavedPagesContent() {
   } catch (error) {
     console.error("Error fetching pages content:", error);
     return { error: error.message || "Failed to fetch pages content" };
-  }
-}
-
-async function initializeVectorIndex() {
-  try {
-    const accountId = await storage.get("cloudflare_account_id");
-    const apiKey = await storage.get("cloudflare_api_key");
-
-    if (!accountId || !apiKey) {
-      return {
-        success: false,
-        message: "Please save your Cloudflare credentials first",
-      };
-    }
-
-    // First, check if index exists
-    const response = await api.fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${INDEX_NAME}`,
-      {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    if (response.status === 404) {
-      const createResponse = await api.fetch(
-        `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            name: INDEX_NAME,
-            description: "Confluence pages vector index",
-            config: {
-              dimensions: 1536,
-              metric: "cosine",
-            },
-          }),
-        }
-      );
-
-      const createResult = await createResponse.json();
-      if (!createResult.success) {
-        return {
-          success: false,
-          message: `Failed to create index: ${createResult.errors?.[0]?.message}`,
-        };
-      }
-    }
-
-    return { success: true };
-  } catch (error) {
-    console.error("Error initializing vector index:", error);
-    return {
-      success: false,
-      message: "Failed to initialize vector index. Please try again.",
-    };
   }
 }
 
