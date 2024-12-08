@@ -1,19 +1,19 @@
 modules:
   jira:issuePanel:
-    - key: resolveai-hello-world-issue-panel
+    - key: resolveai2-hello-world-issue-panel
       resource: issuePanel
       resolver:
         function: resolver
       render: native
-      title: ResolveAI
+      title: ResolveAI2
       icon: https://developer.atlassian.com/platform/forge/images/icons/issue-panel-icon.svg
   jira:projectSettingsPage:
-    - key: resolveai-hello-world-project-settings-page
+    - key: resolveai2-hello-world-project-settings-page
       resource: projectSettings
       resolver:
         function: resolver
       render: native
-      title: ResolveAI
+      title: ResolveAI2
   function:
     - key: resolver
       handler: index.handler
@@ -37,12 +37,6 @@ permissions:
     - read:confluence-user
     - read:page:confluence
     - storage:app
-  content:
-    scripts:
-      - unsafe-inline
-      - unsafe-hashes
-    styles:
-      - unsafe-inline
   external:
     fetch:
       backend:
@@ -51,4 +45,4 @@ permissions:
 app:
   runtime:
     name: nodejs20.x
-  id: ari:cloud:ecosystem::app/ba7f0f69-a1f5-4569-ad1d-c830da0d3464
+  id: ari:cloud:ecosystem::app/4309d427-1e88-4867-a8fa-76a71579d7f4
