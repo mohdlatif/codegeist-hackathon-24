@@ -47,7 +47,6 @@ permissions:
     fetch:
       backend:
         - https://api.together.xyz
-        - https://jsonplaceholder.typicode.com
         - https://api.cloudflare.com
 app:
   runtime:

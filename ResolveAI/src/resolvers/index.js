@@ -1,13 +1,10 @@
 import Resolver from "@forge/resolver";
 import api, { route, storage } from "@forge/api";
+// import validator from "validator";
 
 const resolver = new Resolver();
 
-// resolver.define("getText", (req) => {
-//   // console.log(req);
-//   return "Hello, world!";
-// });
-
+/* --------------------- Pages ---------------------  */
 resolver.define("getPages", async () => {
   try {
     const response = await api
@@ -72,6 +69,7 @@ resolver.define("getSelectedPages", async () => {
   }
 });
 
+/* --------------------- Users ---------------------  */
 resolver.define("getUsers", async () => {
   try {
     const response = await api
@@ -121,33 +119,7 @@ resolver.define("getSelectedUser", async () => {
   }
 });
 
-resolver.define("makeExampleRequest", async () => {
-  try {
-    // Using fetch to make a request to a third-party API
-    // Example using a public API (JSONPlaceholder)
-    const response = await api.fetch(
-      "https://jsonplaceholder.typicode.com/posts/1",
-      {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const data = await response.json();
-    console.log("Third-party API response:", data);
-    return data;
-  } catch (error) {
-    console.error("Error making third-party request:", error);
-    throw error;
-  }
-});
-
+/* --------------------- Cloudflare ---------------------  */
 resolver.define("saveCloudflareCredentials", async ({ payload }) => {
   try {
     const { accountId, email, apiKey } = payload;
@@ -199,6 +171,115 @@ resolver.define("verifyCloudflareToken", async ({ payload }) => {
       success: false,
       message: error.message || "Failed to verify token",
     };
+  }
+});
+
+/* --------------------- Pages Content ---------------------  */
+// Helper function to extract text from Atlas Doc Format
+function extractTextFromAtlasDoc(node) {
+  if (typeof node === "string") return node;
+
+  if (!node) return "";
+
+  // Handle text nodes directly
+  if (node.type === "text" && node.text) {
+    return node.text;
+  }
+
+  // Handle content arrays
+  if (node.content && Array.isArray(node.content)) {
+    return node.content
+      .map((child) => extractTextFromAtlasDoc(child))
+      .join(" ");
+  }
+
+  return "";
+}
+
+function cleanText(text) {
+  // First remove escaped quotes and backslashes using blacklist
+  const unescaped = validator.blacklist(text, '\\"\\\\');
+
+  return validator
+    .stripLow(unescaped, true) // Remove control characters but keep newlines
+    .replace(/\s+/g, " ") // Normalize whitespace
+    .trim(); // Remove leading/trailing whitespace
+}
+
+resolver.define("getSavedPagesContent", async () => {
+  try {
+    const pageIds = (await storage.get("selectedPages")) || [];
+    if (pageIds.length === 0) return [];
+
+    const pagesContent = await Promise.all(
+      pageIds.map(async (pageId) => {
+        try {
+          const response = await api
+            .asUser()
+            .requestConfluence(
+              route`/wiki/api/v2/pages/${pageId}?body-format=ATLAS_DOC_FORMAT`,
+              {
+                headers: {
+                  Accept: "application/json",
+                },
+              }
+            );
+          const pageData = await response.json();
+
+          // Add debug logging
+          console.log("Raw page data:", JSON.stringify(pageData, null, 2));
+
+          // Check if we have valid body data (updated path)
+          if (!pageData.body?.atlas_doc_format?.value) {
+            console.warn(`No body value found for page ${pageId}`);
+            return {
+              id: pageData.id,
+              title: pageData.title,
+              body: "", // Return empty string if no content
+            };
+          }
+
+          let bodyContent;
+          try {
+            bodyContent = JSON.parse(pageData.body.atlas_doc_format.value);
+          } catch (parseError) {
+            console.error(
+              `Error parsing body content for page ${pageId}:`,
+              parseError
+            );
+            return {
+              id: pageData.id,
+              title: pageData.title,
+              body: cleanText(pageData.body.atlas_doc_format.value) || "",
+            };
+          }
+
+          const plainText = extractTextFromAtlasDoc(bodyContent);
+          const cleanedText = cleanText(plainText);
+
+          return {
+            id: pageData.id,
+            title: pageData.title,
+            body: cleanedText,
+          };
+        } catch (pageError) {
+          console.error(`Error processing page ${pageId}:`, pageError);
+          return {
+            id: pageId,
+            title: "Error loading page",
+            body: "",
+          };
+        }
+      })
+    );
+
+    // Filter out any failed pages
+    const validPages = pagesContent.filter((page) => page.body !== undefined);
+    console.log("Valid pages content:", JSON.stringify(validPages, null, 2));
+    return validPages;
+  } catch (error) {
+    console.error("Error fetching pages content:", error);
+    throw error;
   }
 });
 

@@ -129,6 +129,18 @@ const App = () => {
     }
   };
 
+  const handleFetchPagesContent = async () => {
+    setIsLoading(true);
+    try {
+      const pagesContent = await invoke("getSavedPagesContent");
+      console.log("Pages content from frontend:", pagesContent);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (error) {
     return <Text>Error loading data: {error.message}</Text>;
   }
@@ -278,6 +290,22 @@ const App = () => {
                 </Text>
               )}
             </Inline>
+          </Stack>
+        </Box>
+      </Stack>
+      <Stack space="space.075">
+        <Box backgroundColor="color.background.neutral" padding="space.100">
+          <Heading as="h4">Pages Content</Heading>
+        </Box>
+        <Box xcss={xcss({ maxWidth: "600px" })}>
+          <Stack space="space.100">
+            <LoadingButton
+              appearance="default"
+              isLoading={isLoading}
+              onClick={handleFetchPagesContent}
+            >
+              Fetch Pages Content
+            </LoadingButton>
           </Stack>
         </Box>
       </Stack>
