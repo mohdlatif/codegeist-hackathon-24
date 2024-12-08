@@ -11,6 +11,9 @@ import ForgeReconciler, {
   xcss,
   UserPicker,
   LoadingButton,
+  List,
+  Strong,
+  ListItem,
 } from "@forge/react";
 import { invoke } from "@forge/bridge";
 
@@ -303,16 +306,15 @@ const App = () => {
                 spacing="compact"
               />
             </Inline>
-            <Inline space="space.200">
-              <Box xcss={xcss({ maxWidth: "250px" })}>
-                <LoadingButton
-                  appearance="primary"
-                  isLoading={isLoading}
-                  onClick={handleSaveCloudflareCredentials}
-                >
-                  Save Cloudflare Settings
-                </LoadingButton>
-              </Box>
+            <Inline space="space.200" shouldWrap>
+              <LoadingButton
+                appearance="primary"
+                isLoading={isLoading}
+                onClick={handleSaveCloudflareCredentials}
+              >
+                Save Cloudflare Settings
+              </LoadingButton>
+
               <LoadingButton
                 appearance="default"
                 isLoading={isLoading}
@@ -347,9 +349,22 @@ const App = () => {
         <Box xcss={xcss({ maxWidth: "600px" })}>
           <Stack space="space.100">
             <Text>
-              Sync selected pages with the vector database. This process will: •
-              Index new pages • Update changed content • Remove unselected pages
+              <Strong>
+                Sync selected pages with the vector database. This process will:
+              </Strong>
             </Text>
+            <List type="unordered">
+              <ListItem>
+                Index new pages that haven't been vectorized before
+              </ListItem>
+              <ListItem>
+                Update content for pages that have been modified
+              </ListItem>
+              <ListItem>Skip unchanged pages to optimize processing</ListItem>
+              <ListItem>
+                Track changes using content hashing for efficiency
+              </ListItem>
+            </List>
             <LoadingButton
               appearance="primary"
               isLoading={isLoading}
@@ -378,6 +393,17 @@ const App = () => {
                   )}
                 </Text>
               </Box>
+            )}
+            {error && (
+              <Text
+                color={
+                  error.includes("Successfully")
+                    ? "color.text.success"
+                    : "color.text.danger"
+                }
+              >
+                {error.includes("Successfully") ? `✓ ${error}` : `✗ ${error}`}
+              </Text>
             )}
           </Stack>
         </Box>

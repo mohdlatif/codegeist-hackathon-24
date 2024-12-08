@@ -299,14 +299,7 @@ resolver.define("vectorizePages", async () => {
     const apiKey = await storage.get("cloudflare_api_key");
     const email = await storage.get("cloudflare_email");
 
-    // Add more detailed logging of credentials
-    console.log("Raw credentials from storage:", {
-      accountId: accountId?.substring(0, 4),
-      apiKeyLength: apiKey?.length,
-      apiKeyStart: apiKey?.substring(0, 4),
-      email: email?.substring(0, 4),
-    });
-
+    // Validate credentials
     if (!accountId || !apiKey || !email) {
       return {
         success: false,
@@ -314,14 +307,35 @@ resolver.define("vectorizePages", async () => {
       };
     }
 
-    // Initialize Cloudflare client with simple configuration
+    // Initialize Cloudflare client
     const client = new Cloudflare({
       apiEmail: email,
-      apiKey: apiKey,
+      apiToken: apiKey,
     });
 
-    // Call getSavedPagesContent directly
-    console.log("Fetching pages content...");
+    // Try to create index silently
+    try {
+      await client.vectorize.indexes.create({
+        account_id: accountId,
+        name: INDEX_NAME,
+        description: "Confluence pages vector index",
+        config: {
+          dimensions: 1536,
+          metric: "cosine",
+        },
+      });
+      console.log("Index created successfully");
+    } catch (indexError) {
+      // Only log if it's not a duplicate index error
+      if (
+        !indexError.message?.includes("duplicate_name") &&
+        !indexError.message?.includes("already exists")
+      ) {
+        console.error("Index creation failed:", indexError.message);
+      }
+    }
+
+    // Get current pages content
     const pages = await getSavedPagesContent();
     console.log("Pages retrieved:", pages?.length || 0, "pages");
 
@@ -332,93 +346,129 @@ resolver.define("vectorizePages", async () => {
       };
     }
 
-    // Check if index exists
-    console.log("Checking index...", INDEX_NAME);
-    try {
-      await client.vectorize.indexes.get(INDEX_NAME, {
-        account_id: accountId,
-      });
-    } catch (error) {
-      if (error.status === 404) {
-        console.log("Creating new index...");
-        console.log("Account ID:", accountId);
-        console.log("Index Name:", INDEX_NAME);
-        await client.vectorize.indexes.create({
-          account_id: accountId,
-          name: INDEX_NAME,
-          description: "Confluence pages vector index",
-          config: {
-            dimensions: 1536,
-            metric: "cosine",
-          },
-        });
-      } else {
-        console.error("Error checking index:", error);
+    // Get previous vectorization metadata
+    const previousMetadata =
+      (await storage.get("vectorization_metadata")) || {};
+    const previousHashes = previousMetadata.contentHashes || {};
+
+    // Calculate current content hashes
+    const currentHashes = {};
+    const pagesToUpdate = [];
+
+    pages.forEach((page) => {
+      // Create a hash of the content (title + body) to detect changes
+      const contentToHash = `${page.title}|${page.body}`;
+      const contentHash = require("crypto")
+        .createHash("md5")
+        .update(contentToHash)
+        .digest("hex");
+
+      currentHashes[page.id] = contentHash;
+
+      // Check if content has changed
+      if (previousHashes[page.id] !== contentHash) {
+        pagesToUpdate.push(page);
       }
+    });
+
+    if (pagesToUpdate.length === 0) {
+      return {
+        success: true,
+        message: "No content changes detected. Skipping vectorization.",
+        vectorized_count: 0,
+      };
     }
 
-    // Prepare vectors
-    console.log("Preparing vectors...");
-    const vectors = pages.map((page) => ({
+    console.log(`Found ${pagesToUpdate.length} pages with updated content`);
+
+    // Prepare vectors only for changed content
+    const vectors = pagesToUpdate.map((page) => ({
       id: page.id.toString(),
       values: Array(1536)
         .fill(0)
         .map(() => Math.random() * 2 - 1),
-      metadata: JSON.stringify({
+      metadata: {
         title: page.title,
         content: page.body.substring(0, 1000),
         last_updated: new Date().toISOString(),
-      }),
+      },
     }));
 
-    // Handle deleted pages
-    console.log("Checking for deleted pages...");
-    const oldMetadata = await storage.get("vectorization_metadata");
-    const oldPageIds = oldMetadata?.page_ids || [];
-    const newPageIds = pages.map((p) => p.id);
-    const deletedPageIds = oldPageIds.filter((id) => !newPageIds.includes(id));
-    console.log("Deleted pages found:", deletedPageIds.length);
-
-    if (deletedPageIds.length > 0) {
-      console.log("Deleting old vectors...");
-      await client.vectorize.indexes.deleteByIds(INDEX_NAME, {
-        account_id: accountId,
-        ids: deletedPageIds.map((id) => id.toString()),
-      });
-    }
+    // Convert to NDJSON format
+    const ndjsonVectors = vectors
+      .map((vector) => JSON.stringify(vector))
+      .join("\n");
 
     // Upsert vectors
-    console.log("Upserting vectors...");
-    const upsertResult = await client.vectorize.indexes.upsert(INDEX_NAME, {
-      account_id: accountId,
-      vectors: vectors,
-    });
+    console.log(`Upserting ${vectors.length} vectors...`);
+    try {
+      const upsertResult = await client.vectorize.indexes.upsert(INDEX_NAME, {
+        account_id: accountId,
+        body: ndjsonVectors,
+        unparsableBehavior: "error",
+      });
 
-    if (!upsertResult.success) {
-      console.error("Upsert failed:", upsertResult);
+      // Cloudflare might return a success response with ids and count
+      if (upsertResult.ids || upsertResult.count) {
+        console.log(
+          `Successfully upserted ${
+            upsertResult.count || vectors.length
+          } vectors`
+        );
+
+        await storage.set("vectorization_metadata", {
+          last_updated: new Date().toISOString(),
+          page_count: pages.length,
+          page_ids: pages.map((p) => p.id),
+          contentHashes: currentHashes,
+        });
+
+        return {
+          success: true,
+          vectorized_count: upsertResult.count || vectors.length,
+          message: `Successfully vectorized ${
+            upsertResult.count || vectors.length
+          } pages`,
+          status: "success",
+        };
+      }
+
+      // If we get here without ids/count but also without errors, assume success
+      if (!upsertResult.errors) {
+        await storage.set("vectorization_metadata", {
+          last_updated: new Date().toISOString(),
+          page_count: pages.length,
+          page_ids: pages.map((p) => p.id),
+          contentHashes: currentHashes,
+        });
+
+        return {
+          success: true,
+          vectorized_count: vectors.length,
+          message: `Successfully vectorized ${vectors.length} pages`,
+        };
+      }
+
+      // If we have errors in the response
+      console.error("Upsert response contained errors:", upsertResult.errors);
       return {
         success: false,
-        message: "Failed to upsert vectors",
+        message: `Vectorization failed: ${
+          upsertResult.errors?.[0]?.message || "Unknown error"
+        }`,
+        status: "error",
+      };
+    } catch (upsertError) {
+      console.error("Error during upsert:", upsertError);
+      return {
+        success: false,
+        message: `Failed to vectorize pages: ${
+          upsertError.message || "Unknown error"
+        }`,
       };
     }
-
-    // Store metadata
-    console.log("Storing vectorization metadata...");
-    await storage.set("vectorization_metadata", {
-      last_updated: new Date().toISOString(),
-      page_count: pages.length,
-      page_ids: pages.map((p) => p.id),
-    });
-
-    console.log("Vectorization process completed successfully");
-    return {
-      success: true,
-      vectorized_count: pages.length,
-      message: `Successfully vectorized ${pages.length} pages`,
-    };
   } catch (error) {
     console.error("Vectorization error:", error);
-    console.error("Error stack:", error.stack);
     return {
       success: false,
       message: `Failed to vectorize pages: ${error.message}`,
