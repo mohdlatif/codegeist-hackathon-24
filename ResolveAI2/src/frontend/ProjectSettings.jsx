@@ -30,58 +30,82 @@ const App = () => {
 
   useEffect(() => {
     invoke("getPages")
-      .then(setPages)
-      .catch((err) => setError(err));
+      .then((response) => {
+        if (response.error) {
+          setError(response.error);
+        } else {
+          setPages(response);
+        }
+      })
+      .catch((err) => setError(err.message));
 
     invoke("getSelectedPages")
-      .then((storedPages) => {
-        if (storedPages && storedPages.length > 0) {
-          setSelectedPages(storedPages);
+      .then((response) => {
+        if (response.error) {
+          setError(response.error);
+        } else if (response && response.length > 0) {
+          setSelectedPages(response);
         }
       })
-      .catch((err) => setError(err));
+      .catch((err) => setError(err.message));
 
     invoke("getUsers")
-      .then(setUsers)
-      .catch((err) => setError(err));
+      .then((response) => {
+        if (response.error) {
+          setError(response.error);
+        } else {
+          setUsers(response);
+        }
+      })
+      .catch((err) => setError(err.message));
 
     invoke("getSelectedUser")
-      .then((storedUserId) => {
-        // console.log("Loaded stored user ID:", storedUserId);
-        if (storedUserId) {
-          setSelectedUser(storedUserId);
+      .then((response) => {
+        if (response.error) {
+          setError(response.error);
+        } else if (response) {
+          setSelectedUser(response);
         }
       })
-      .catch((err) => setError(err));
+      .catch((err) => setError(err.message));
 
     invoke("getCloudflareCredentials")
-      .then((credentials) => {
-        if (credentials) {
-          setCloudflareCredentials(credentials);
+      .then((response) => {
+        if (response.error) {
+          setError(response.error);
+        } else if (response) {
+          setCloudflareCredentials(response);
         }
       })
-      .catch((err) => setError(err));
+      .catch((err) => setError(err.message));
   }, []);
 
   const handleSavePages = async () => {
     setIsLoading(true);
     try {
-      await invoke("saveSelectedPages", { pageIds: selectedPages });
+      const response = await invoke("saveSelectedPages", {
+        pageIds: selectedPages,
+      });
+      if (response.error) {
+        setError(response.error);
+      }
     } catch (err) {
-      setError(err);
+      setError(err.message);
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleUserChange = async (user) => {
-    // console.log("Selected user:", user);
     setSelectedUser(user.id);
     setIsLoading(true);
     try {
-      await invoke("saveSelectedUser", { user });
+      const response = await invoke("saveSelectedUser", { user });
+      if (response.error) {
+        setError(response.error);
+      }
     } catch (err) {
-      setError(err);
+      setError(err.message);
     } finally {
       setIsLoading(false);
     }
@@ -132,17 +156,37 @@ const App = () => {
   const handleFetchPagesContent = async () => {
     setIsLoading(true);
     try {
-      const pagesContent = await invoke("getSavedPagesContent");
-      console.log("Pages content from frontend:", pagesContent);
+      const vectorizeResult = await invoke("vectorizePages");
+      console.log("Vectorization result:", vectorizeResult);
+
+      if (vectorizeResult.success) {
+        setVerificationStatus("vectorized");
+      } else {
+        setVerificationStatus("failed");
+      }
+
+      // Store the error message if there is one
+      if (vectorizeResult.message) {
+        setError(vectorizeResult.message);
+      }
     } catch (err) {
-      setError(err);
+      console.error(err);
+      setVerificationStatus("failed");
+      setError("An unexpected error occurred");
     } finally {
       setIsLoading(false);
     }
   };
 
   if (error) {
-    return <Text>Error loading data: {error.message}</Text>;
+    return (
+      <Stack space="space.400">
+        <Box backgroundColor="color.background.danger" padding="space.200">
+          <Text color="color.text.danger">Error: {error}</Text>
+        </Box>
+        <App /> {/* Optionally render the rest of the app below the error */}
+      </Stack>
+    );
   }
 
   if (!pages || !users) {
@@ -279,14 +323,17 @@ const App = () => {
               {verificationStatus && (
                 <Text
                   color={
-                    verificationStatus === "valid"
+                    verificationStatus === "valid" ||
+                    verificationStatus === "vectorized"
                       ? "color.text.success"
                       : "color.text.danger"
                   }
                 >
                   {verificationStatus === "valid"
                     ? "✓ Token is valid and active"
-                    : "✗ Invalid token"}
+                    : verificationStatus === "vectorized"
+                    ? `✓ Pages successfully vectorized`
+                    : "✗ Operation failed"}
                 </Text>
               )}
             </Inline>
@@ -295,17 +342,43 @@ const App = () => {
       </Stack>
       <Stack space="space.075">
         <Box backgroundColor="color.background.neutral" padding="space.100">
-          <Heading as="h4">Pages Content</Heading>
+          <Heading as="h4">Vector Database Management</Heading>
         </Box>
         <Box xcss={xcss({ maxWidth: "600px" })}>
           <Stack space="space.100">
+            <Text>
+              Sync selected pages with the vector database. This process will: •
+              Index new pages • Update changed content • Remove unselected pages
+            </Text>
             <LoadingButton
-              appearance="default"
+              appearance="primary"
               isLoading={isLoading}
               onClick={handleFetchPagesContent}
             >
-              Fetch Pages Content
+              Sync Pages to Vector DB
             </LoadingButton>
+            {verificationStatus && (
+              <Box>
+                <Text
+                  color={
+                    verificationStatus === "vectorized"
+                      ? "color.text.success"
+                      : "color.text.danger"
+                  }
+                >
+                  {verificationStatus === "vectorized" ? (
+                    <Stack space="space.050">
+                      <Text>✓ Vector database successfully updated</Text>
+                      <Text size="small" color="color.text.subtle">
+                        Last sync: {new Date().toLocaleString()}
+                      </Text>
+                    </Stack>
+                  ) : (
+                    "✗ Sync failed. Please try again."
+                  )}
+                </Text>
+              </Box>
+            )}
           </Stack>
         </Box>
       </Stack>
