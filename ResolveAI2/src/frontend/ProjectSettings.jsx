@@ -183,7 +183,8 @@ const App = () => {
 
       if (vectorizeResult.success) {
         setVerificationStatus("vectorized");
-        setSuccessMessage(vectorizeResult.message);
+        const message = vectorizeResult.message;
+        setSuccessMessage(message);
       } else {
         setVerificationStatus("failed");
         setErrorMessage(vectorizeResult.message);
