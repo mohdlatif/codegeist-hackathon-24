@@ -47,7 +47,7 @@ const App = () => {
 
     invoke("getSelectedUser")
       .then((storedUserId) => {
-        console.log("Loaded stored user ID:", storedUserId);
+        // console.log("Loaded stored user ID:", storedUserId);
         if (storedUserId) {
           setSelectedUser(storedUserId);
         }
@@ -75,7 +75,7 @@ const App = () => {
   };
 
   const handleUserChange = async (user) => {
-    console.log("Selected user:", user);
+    // console.log("Selected user:", user);
     setSelectedUser(user.id);
     setIsLoading(true);
     try {
@@ -109,7 +109,7 @@ const App = () => {
         apiKey: cloudflareCredentials.apiKey,
       });
 
-      console.log("Verification response:", response);
+      // console.log("Verification response:", response);
 
       if (
         response &&
