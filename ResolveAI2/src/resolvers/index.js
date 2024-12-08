@@ -376,6 +376,7 @@ resolver.define("vectorizePages", async () => {
         success: true,
         message: "No content changes detected. Skipping vectorization.",
         vectorized_count: 0,
+        status: "success",
       };
     }
 
@@ -425,10 +426,10 @@ resolver.define("vectorizePages", async () => {
 
         return {
           success: true,
-          vectorized_count: upsertResult.count || vectors.length,
           message: `Successfully vectorized ${
             upsertResult.count || vectors.length
           } pages`,
+          vectorized_count: upsertResult.count || vectors.length,
           status: "success",
         };
       }

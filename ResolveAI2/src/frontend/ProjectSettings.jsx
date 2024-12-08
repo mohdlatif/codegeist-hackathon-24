@@ -30,6 +30,10 @@ const App = () => {
     apiKey: "",
   });
   const [verificationStatus, setVerificationStatus] = useState(null);
+  const [maskCredentials, setMaskCredentials] = useState(true);
+  const [messageType, setMessageType] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
+  const [errorMessage, setErrorMessage] = useState(null);
 
   useEffect(() => {
     invoke("getPages")
@@ -78,6 +82,15 @@ const App = () => {
           setError(response.error);
         } else if (response) {
           setCloudflareCredentials(response);
+          setCloudflareCredentials((prev) => ({
+            accountId: response.accountId
+              ? "••••" + response.accountId.slice(-4)
+              : "",
+            email: response.email
+              ? response.email.replace(/(.{2})(.*)(@.*)/, "$1•••$3")
+              : "",
+            apiKey: response.apiKey ? "••••" + response.apiKey.slice(-4) : "",
+          }));
         }
       })
       .catch((err) => setError(err.message));
@@ -132,8 +145,11 @@ const App = () => {
   const handleVerifyToken = async () => {
     setIsLoading(true);
     try {
+      // Get actual credentials from storage first
+      const storedCredentials = await invoke("getCloudflareCredentials");
+
       const response = await invoke("verifyCloudflareToken", {
-        apiKey: cloudflareCredentials.apiKey,
+        apiKey: storedCredentials.apiKey, // Use the stored API key instead of the masked one
       });
 
       // console.log("Verification response:", response);
@@ -158,26 +174,41 @@ const App = () => {
 
   const handleFetchPagesContent = async () => {
     setIsLoading(true);
+    setSuccessMessage(null);
+    setErrorMessage(null);
+
     try {
       const vectorizeResult = await invoke("vectorizePages");
       console.log("Vectorization result:", vectorizeResult);
 
       if (vectorizeResult.success) {
         setVerificationStatus("vectorized");
+        setSuccessMessage(vectorizeResult.message);
       } else {
         setVerificationStatus("failed");
-      }
-
-      // Store the error message if there is one
-      if (vectorizeResult.message) {
-        setError(vectorizeResult.message);
+        setErrorMessage(vectorizeResult.message);
       }
     } catch (err) {
       console.error(err);
       setVerificationStatus("failed");
-      setError("An unexpected error occurred");
+      setErrorMessage("An unexpected error occurred");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleCredentialBlur = (field) => {
+    const currentValue = cloudflareCredentials[field];
+
+    // Only mask if the value isn't already masked
+    if (!currentValue.includes("•")) {
+      setCloudflareCredentials((prev) => ({
+        ...prev,
+        [field]:
+          field === "email"
+            ? currentValue.replace(/(.{2})(.*)(@.*)/, "$1•••$3")
+            : "••••" + currentValue.slice(-4),
+      }));
     }
   };
 
@@ -276,6 +307,7 @@ const App = () => {
                     accountId: e.target.value,
                   }))
                 }
+                onBlur={() => handleCredentialBlur("accountId")}
                 placeholder="Enter Account ID"
                 spacing="compact"
               />
@@ -289,6 +321,7 @@ const App = () => {
                     email: e.target.value,
                   }))
                 }
+                onBlur={() => handleCredentialBlur("email")}
                 placeholder="Enter Cloudflare Email"
                 spacing="compact"
               />
@@ -302,6 +335,7 @@ const App = () => {
                     apiKey: e.target.value,
                   }))
                 }
+                onBlur={() => handleCredentialBlur("apiKey")}
                 placeholder="Enter API Key"
                 spacing="compact"
               />
@@ -325,17 +359,16 @@ const App = () => {
               {verificationStatus && (
                 <Text
                   color={
-                    verificationStatus === "valid" ||
-                    verificationStatus === "vectorized"
+                    verificationStatus === "valid"
                       ? "color.text.success"
                       : "color.text.danger"
                   }
                 >
                   {verificationStatus === "valid"
                     ? "✓ Token is valid and active"
-                    : verificationStatus === "vectorized"
-                    ? `✓ Pages successfully vectorized`
-                    : "✗ Operation failed"}
+                    : verificationStatus === "invalid"
+                    ? "✗ Token verification failed"
+                    : null}
                 </Text>
               )}
             </Inline>
@@ -365,46 +398,35 @@ const App = () => {
                 Track changes using content hashing for efficiency
               </ListItem>
             </List>
-            <LoadingButton
-              appearance="primary"
-              isLoading={isLoading}
-              onClick={handleFetchPagesContent}
-            >
-              Sync Pages to Vector DB
-            </LoadingButton>
-            {verificationStatus && (
-              <Box>
-                <Text
-                  color={
-                    verificationStatus === "vectorized"
-                      ? "color.text.success"
-                      : "color.text.danger"
-                  }
-                >
-                  {verificationStatus === "vectorized" ? (
-                    <Stack space="space.050">
-                      <Text>✓ Vector database successfully updated</Text>
-                      <Text size="small" color="color.text.subtle">
-                        Last sync: {new Date().toLocaleString()}
-                      </Text>
-                    </Stack>
-                  ) : (
-                    "✗ Sync failed. Please try again."
-                  )}
-                </Text>
-              </Box>
-            )}
-            {error && (
-              <Text
-                color={
-                  error.includes("Successfully")
-                    ? "color.text.success"
-                    : "color.text.danger"
-                }
+            <Stack space="space.100">
+              <LoadingButton
+                appearance="primary"
+                isLoading={isLoading}
+                onClick={handleFetchPagesContent}
               >
-                {error.includes("Successfully") ? `✓ ${error}` : `✗ ${error}`}
-              </Text>
-            )}
+                Sync Pages to Vector DB
+              </LoadingButton>
+
+              {/* Success Message */}
+              {successMessage && (
+                <Box
+                  backgroundColor="color.background.success.subtle"
+                  padding="space.150"
+                >
+                  <Text color="color.text.success">✓ {successMessage}</Text>
+                </Box>
+              )}
+
+              {/* Error Message */}
+              {errorMessage && (
+                <Box
+                  backgroundColor="color.background.danger.subtle"
+                  padding="space.150"
+                >
+                  <Text color="color.text.danger">✗ {errorMessage}</Text>
+                </Box>
+              )}
+            </Stack>
           </Stack>
         </Box>
       </Stack>
