@@ -173,4 +173,33 @@ resolver.define("getCloudflareCredentials", async () => {
   }
 });
 
+resolver.define("verifyCloudflareToken", async ({ payload }) => {
+  if (!payload || !payload.apiKey) {
+    return { success: false, message: "API Key is required" };
+  }
+
+  try {
+    const response = await api.fetch(
+      "https://api.cloudflare.com/client/v4/user/tokens/verify",
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${payload.apiKey}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const data = await response.json();
+    console.log("Cloudflare token verification response:", data);
+    return data;
+  } catch (error) {
+    console.error("Error verifying Cloudflare token:", error);
+    return {
+      success: false,
+      message: error.message || "Failed to verify token",
+    };
+  }
+});
+
 export const handler = resolver.getDefinitions();

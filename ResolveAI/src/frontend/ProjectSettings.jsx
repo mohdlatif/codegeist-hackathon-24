@@ -26,6 +26,7 @@ const App = () => {
     email: "",
     apiKey: "",
   });
+  const [verificationStatus, setVerificationStatus] = useState(null);
 
   useEffect(() => {
     invoke("getPages")
@@ -96,6 +97,33 @@ const App = () => {
       });
     } catch (err) {
       setError(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyToken = async () => {
+    setIsLoading(true);
+    try {
+      const response = await invoke("verifyCloudflareToken", {
+        apiKey: cloudflareCredentials.apiKey,
+      });
+
+      console.log("Verification response:", response);
+
+      if (
+        response &&
+        response.success === true &&
+        response.result &&
+        response.result.status === "active"
+      ) {
+        setVerificationStatus("valid");
+      } else {
+        setVerificationStatus("invalid");
+      }
+    } catch (error) {
+      console.error("Verification error:", error);
+      setVerificationStatus("invalid");
     } finally {
       setIsLoading(false);
     }
@@ -219,15 +247,37 @@ const App = () => {
                 spacing="compact"
               />
             </Inline>
-            <Box xcss={xcss({ maxWidth: "250px" })}>
+            <Inline space="space.200">
+              <Box xcss={xcss({ maxWidth: "250px" })}>
+                <LoadingButton
+                  appearance="primary"
+                  isLoading={isLoading}
+                  onClick={handleSaveCloudflareCredentials}
+                >
+                  Save Cloudflare Settings
+                </LoadingButton>
+              </Box>
               <LoadingButton
-                appearance="primary"
+                appearance="default"
                 isLoading={isLoading}
-                onClick={handleSaveCloudflareCredentials}
+                onClick={handleVerifyToken}
               >
-                Save Cloudflare Settings
+                Verify Token
               </LoadingButton>
-            </Box>
+              {verificationStatus && (
+                <Text
+                  color={
+                    verificationStatus === "valid"
+                      ? "color.text.success"
+                      : "color.text.danger"
+                  }
+                >
+                  {verificationStatus === "valid"
+                    ? "✓ Token is valid and active"
+                    : "✗ Invalid token"}
+                </Text>
+              )}
+            </Inline>
           </Stack>
         </Box>
       </Stack>
