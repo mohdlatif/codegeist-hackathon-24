@@ -8,6 +8,7 @@ import ForgeReconciler, {
   Stack,
   Image,
   Textfield,
+  xcss,
   UserPicker,
   LoadingButton,
 } from "@forge/react";
@@ -44,9 +45,10 @@ const App = () => {
       .catch((err) => setError(err));
 
     invoke("getSelectedUser")
-      .then((storedUser) => {
-        if (storedUser) {
-          setSelectedUser(storedUser);
+      .then((storedUserId) => {
+        console.log("Loaded stored user ID:", storedUserId);
+        if (storedUserId) {
+          setSelectedUser(storedUserId);
         }
       })
       .catch((err) => setError(err));
@@ -71,11 +73,12 @@ const App = () => {
     }
   };
 
-  const handleUserChange = async (value) => {
-    setSelectedUser(value);
+  const handleUserChange = async (user) => {
+    console.log("Selected user:", user);
+    setSelectedUser(user.id);
     setIsLoading(true);
     try {
-      await invoke("saveSelectedUser", { userId: value });
+      await invoke("saveSelectedUser", { user });
     } catch (err) {
       setError(err);
     } finally {
@@ -115,21 +118,25 @@ const App = () => {
         >
           <Heading as="h4">Project Settings</Heading>
         </Box>
-        <Text>Select user as default assignee for tickets:</Text>
-        <Inline space="space.200" shouldWrap>
-          <Select
-            options={users.map((user) => ({
-              label: user.displayName,
-              value: user.accountId,
-            }))}
-            value={selectedUser}
-            onChange={handleUserChange}
-            placeholder="Select user"
-            isSearchable={true}
-            isRequired={true}
-            spacing="compact"
-          />
-        </Inline>
+        <Stack space="space.100">
+          <Text>Select user as default assignee for tickets:</Text>
+          <Box
+            xcss={xcss({
+              maxWidth: "400px",
+            })}
+          >
+            <UserPicker
+              label="Default Assignee"
+              placeholder="Select user"
+              name="default-assignee"
+              defaultValue={selectedUser}
+              onChange={handleUserChange}
+              isRequired={true}
+              description="This user will be set as the default assignee for tickets"
+            />
+          </Box>
+        </Stack>
+
         <Text>Select source pages for AI to generate answers from:</Text>
         <Inline space="space.200" shouldWrap>
           <Select
@@ -162,62 +169,67 @@ const App = () => {
         <Box backgroundColor="color.background.neutral" padding="space.100">
           <Heading as="h4">Cloudflare Settings</Heading>
         </Box>
-        <Stack space="space.100">
-          <Text>Enter your Cloudflare credentials:</Text>
-          <Inline
-            space="space.200"
-            alignBlock="center"
-            spread="space-between"
-            alignInline="center"
-          >
-            <Textfield
-              label="Account ID"
-              isCompact={true}
-              value={cloudflareCredentials.accountId || ""}
-              onChange={(e) =>
-                setCloudflareCredentials((prev) => ({
-                  ...prev,
-                  accountId: e.target.value,
-                }))
-              }
-              placeholder="Enter Account ID"
-              spacing="compact"
-            />
-            <Textfield
-              label="Email"
-              isCompact
-              value={cloudflareCredentials.email || ""}
-              onChange={(e) =>
-                setCloudflareCredentials((prev) => ({
-                  ...prev,
-                  email: e.target.value,
-                }))
-              }
-              placeholder="Enter Cloudflare Email"
-              spacing="compact"
-            />
-            <Textfield
-              label="API Key"
-              isCompact
-              value={cloudflareCredentials.apiKey || ""}
-              onChange={(e) =>
-                setCloudflareCredentials((prev) => ({
-                  ...prev,
-                  apiKey: e.target.value,
-                }))
-              }
-              placeholder="Enter API Key"
-              spacing="compact"
-            />
-            <LoadingButton
-              appearance="primary"
-              isLoading={isLoading}
-              onClick={handleSaveCloudflareCredentials}
+        <Box xcss={xcss({ maxWidth: "600px" })}>
+          <Stack space="space.100">
+            <Text>Enter your Cloudflare credentials:</Text>
+            <Inline
+              space="space.200"
+              alignBlock="stretch"
+              spread="space-between"
+              alignInline="center"
             >
-              Save Cloudflare Settings
-            </LoadingButton>
-          </Inline>
-        </Stack>
+              <Textfield
+                label="Account ID"
+                aria-labelledby="account-id"
+                isCompact={true}
+                value={cloudflareCredentials.accountId || ""}
+                onChange={(e) =>
+                  setCloudflareCredentials((prev) => ({
+                    ...prev,
+                    accountId: e.target.value,
+                  }))
+                }
+                placeholder="Enter Account ID"
+                spacing="compact"
+              />
+              <Textfield
+                label="Email"
+                isCompact
+                value={cloudflareCredentials.email || ""}
+                onChange={(e) =>
+                  setCloudflareCredentials((prev) => ({
+                    ...prev,
+                    email: e.target.value,
+                  }))
+                }
+                placeholder="Enter Cloudflare Email"
+                spacing="compact"
+              />
+              <Textfield
+                label="API Key"
+                isCompact
+                value={cloudflareCredentials.apiKey || ""}
+                onChange={(e) =>
+                  setCloudflareCredentials((prev) => ({
+                    ...prev,
+                    apiKey: e.target.value,
+                  }))
+                }
+                placeholder="Enter API Key"
+                spacing="compact"
+              />
+            </Inline>
+            <Box xcss={xcss({ maxWidth: "250px" })}>
+              <LoadingButton
+                appearance="primary"
+                isLoading={isLoading}
+                onClick={handleSaveCloudflareCredentials}
+              >
+                Save Cloudflare Settings
+              </LoadingButton>
+            </Box>
+          </Stack>
+        </Box>
       </Stack>
     </Stack>
   );

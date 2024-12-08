@@ -100,8 +100,9 @@ resolver.define("getUsers", async () => {
 
 resolver.define("saveSelectedUser", async ({ payload }) => {
   try {
-    const { userId } = payload;
-    await storage.set("selectedUser", userId);
+    const { user } = payload;
+    // Store just the user ID
+    await storage.set("selectedUser", user.id);
     return true;
   } catch (error) {
     console.error("Error saving selected user:", error);
@@ -112,6 +113,7 @@ resolver.define("saveSelectedUser", async ({ payload }) => {
 resolver.define("getSelectedUser", async () => {
   try {
     const userId = await storage.get("selectedUser");
+    // console.log("Retrieved user ID from storage:", userId);
     return userId;
   } catch (error) {
     console.error("Error fetching selected user:", error);
