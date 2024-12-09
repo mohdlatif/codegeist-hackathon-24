@@ -37,11 +37,6 @@ permissions:
     - read:confluence-user
     - read:page:confluence
     - storage:app
-  external:
-    fetch:
-      backend:
-        - https://api.together.xyz
-        - https://api.cloudflare.com
 app:
   runtime:
     name: nodejs20.x
