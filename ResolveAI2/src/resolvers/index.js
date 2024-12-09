@@ -396,7 +396,7 @@ resolver.define("testVectorQuery", async ({ payload }) => {
       apiToken: apiKey,
     });
 
-    // Get embeddings from Cloudflare Workers AI
+    // Get embeddings from Cloudflare Workers AI - using correct API endpoint
     const embeddingResponse = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/baai/bge-base-en-v1.5`,
       {
@@ -406,7 +406,7 @@ resolver.define("testVectorQuery", async ({ payload }) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          text: [query],
+          text: [query], // API expects an array of strings
         }),
       }
     );
@@ -424,7 +424,7 @@ resolver.define("testVectorQuery", async ({ payload }) => {
 
     const queryEmbedding = embeddingData.result.data[0];
 
-    // Search vectors using the embedding
+    // Query the vector index
     const searchResponse = await client.vectorize.indexes.query(INDEX_NAME, {
       account_id: accountId,
       vector: queryEmbedding,
@@ -433,51 +433,50 @@ resolver.define("testVectorQuery", async ({ payload }) => {
 
     console.log("Search response:", searchResponse);
 
-    if (!searchResponse.success) {
+    // If we get matches, fetch the pages
+    if (searchResponse && searchResponse.matches) {
+      const matches = await Promise.all(
+        searchResponse.matches.map(async (match) => {
+          try {
+            const response = await api
+              .asUser()
+              .requestConfluence(route`/wiki/api/v2/pages/${match.id}`, {
+                headers: {
+                  Accept: "application/json",
+                },
+              });
+            const pageData = await response.json();
+
+            return {
+              title: pageData.title,
+              content:
+                pageData.body?.storage?.value?.substring(0, 1000) ||
+                "No content available",
+              score: match.score,
+              pageId: match.id,
+            };
+          } catch (error) {
+            console.error(`Error fetching page ${match.id}:`, error);
+            return {
+              title: "Page not found",
+              content: "Error loading page content",
+              score: match.score,
+              pageId: match.id,
+            };
+          }
+        })
+      );
+
       return {
-        success: false,
-        message: "Failed to query vector database",
-        error: searchResponse.errors,
+        success: true,
+        matches,
+        message: `Found ${matches.length} relevant matches`,
       };
     }
 
-    // If we don't have metadata, fetch the pages directly
-    const matches = await Promise.all(
-      searchResponse.matches.map(async (match) => {
-        try {
-          const response = await api
-            .asUser()
-            .requestConfluence(route`/wiki/api/v2/pages/${match.id}`, {
-              headers: {
-                Accept: "application/json",
-              },
-            });
-          const pageData = await response.json();
-
-          return {
-            title: pageData.title,
-            content:
-              pageData.body?.storage?.value?.substring(0, 1000) ||
-              "No content available",
-            score: match.score,
-            pageId: match.id,
-          };
-        } catch (error) {
-          console.error(`Error fetching page ${match.id}:`, error);
-          return {
-            title: "Page not found",
-            content: "Error loading page content",
-            score: match.score,
-            pageId: match.id,
-          };
-        }
-      })
-    );
-
     return {
-      success: true,
-      matches,
-      message: `Found ${matches.length} relevant matches`,
+      success: false,
+      message: "No matches found",
     };
   } catch (error) {
     console.error("Vector query error:", error);
@@ -565,5 +564,33 @@ async function getSavedPagesContent() {
     return { error: error.message || "Failed to fetch pages content" };
   }
 }
+
+// Add this new resolver to check index status
+resolver.define("checkVectorIndex", async () => {
+  try {
+    const accountId = await storage.get("cloudflare_account_id");
+    const apiKey = await storage.get("cloudflare_api_key");
+    const email = await storage.get("cloudflare_email");
+
+    const client = new Cloudflare({
+      apiEmail: email,
+      apiToken: apiKey,
+    });
+
+    // Get index information
+    const indexInfo = await client.vectorize.indexes.get(INDEX_NAME, {
+      account_id: accountId,
+    });
+
+    console.log("Index information:", indexInfo);
+    return indexInfo;
+  } catch (error) {
+    console.error("Error checking index:", error);
+    return {
+      success: false,
+      message: `Failed to check index: ${error.message}`,
+    };
+  }
+});
 
 export const handler = resolver.getDefinitions();
