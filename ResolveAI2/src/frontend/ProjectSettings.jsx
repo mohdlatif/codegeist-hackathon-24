@@ -36,6 +36,12 @@ const App = () => {
   const [successMessage, setSuccessMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
   const [showVerificationStatus, setShowVerificationStatus] = useState(false);
+  const [inputsUpdated, setInputsUpdated] = useState(false);
+  const [modifiedFields, setModifiedFields] = useState({
+    accountId: false,
+    email: false,
+    apiKey: false,
+  });
 
   useEffect(() => {
     invoke("getPages")
@@ -83,16 +89,11 @@ const App = () => {
         if (response.error) {
           setError(response.error);
         } else if (response) {
-          setCloudflareCredentials(response);
-          setCloudflareCredentials((prev) => ({
-            accountId: response.accountId
-              ? "••••" + response.accountId.slice(-4)
-              : "",
-            email: response.email
-              ? response.email.replace(/(.{2})(.*)(@.*)/, "$1•••$3")
-              : "",
-            apiKey: response.apiKey ? "••••" + response.apiKey.slice(-4) : "",
-          }));
+          setCloudflareCredentials({
+            accountId: "••••" + response.accountId.slice(-4),
+            email: response.email.replace(/(.{2})(.*)(@.*)/, "$1•••$3"),
+            apiKey: "••••" + response.apiKey.slice(-4),
+          });
         }
       })
       .catch((err) => setError(err.message));
@@ -132,11 +133,34 @@ const App = () => {
   const handleSaveCloudflareCredentials = async () => {
     setIsLoading(true);
     try {
-      await invoke("saveCloudflareCredentials", {
-        accountId: cloudflareCredentials.accountId,
-        email: cloudflareCredentials.email,
-        apiKey: cloudflareCredentials.apiKey,
-      });
+      // Get the current stored credentials
+      const storedCredentials = await invoke("getCloudflareCredentials");
+
+      // Create an object to hold only the fields that changed
+      const updatedFields = {};
+
+      // Check each field - if it contains dots (masked), use stored value, otherwise use new value
+      if (!cloudflareCredentials.accountId.includes("•")) {
+        updatedFields.accountId = cloudflareCredentials.accountId;
+      } else {
+        updatedFields.accountId = storedCredentials.accountId;
+      }
+
+      if (!cloudflareCredentials.email.includes("•")) {
+        updatedFields.email = cloudflareCredentials.email;
+      } else {
+        updatedFields.email = storedCredentials.email;
+      }
+
+      if (!cloudflareCredentials.apiKey.includes("•")) {
+        updatedFields.apiKey = cloudflareCredentials.apiKey;
+      } else {
+        updatedFields.apiKey = storedCredentials.apiKey;
+      }
+
+      // Save only the actual values (not masked ones)
+      await invoke("saveCloudflareCredentials", updatedFields);
+      setInputsUpdated(false);
     } catch (err) {
       setError(err);
     } finally {
@@ -208,19 +232,12 @@ const App = () => {
     }
   };
 
-  const handleCredentialBlur = (field) => {
-    const currentValue = cloudflareCredentials[field];
-
-    // Only mask if the value isn't already masked
-    if (!currentValue.includes("•")) {
-      setCloudflareCredentials((prev) => ({
-        ...prev,
-        [field]:
-          field === "email"
-            ? currentValue.replace(/(.{2})(.*)(@.*)/, "$1•••$3")
-            : "••••" + currentValue.slice(-4),
-      }));
-    }
+  const handleCredentialChange = (field, value) => {
+    setCloudflareCredentials((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+    setInputsUpdated(true);
   };
 
   if (error) {
@@ -313,12 +330,8 @@ const App = () => {
                 isCompact={true}
                 value={cloudflareCredentials.accountId || ""}
                 onChange={(e) =>
-                  setCloudflareCredentials((prev) => ({
-                    ...prev,
-                    accountId: e.target.value,
-                  }))
+                  handleCredentialChange("accountId", e.target.value)
                 }
-                onBlur={() => handleCredentialBlur("accountId")}
                 placeholder="Enter Account ID"
                 spacing="compact"
               />
@@ -327,12 +340,8 @@ const App = () => {
                 isCompact
                 value={cloudflareCredentials.email || ""}
                 onChange={(e) =>
-                  setCloudflareCredentials((prev) => ({
-                    ...prev,
-                    email: e.target.value,
-                  }))
+                  handleCredentialChange("email", e.target.value)
                 }
-                onBlur={() => handleCredentialBlur("email")}
                 placeholder="Enter Cloudflare Email"
                 spacing="compact"
               />
@@ -341,12 +350,8 @@ const App = () => {
                 isCompact
                 value={cloudflareCredentials.apiKey || ""}
                 onChange={(e) =>
-                  setCloudflareCredentials((prev) => ({
-                    ...prev,
-                    apiKey: e.target.value,
-                  }))
+                  handleCredentialChange("apiKey", e.target.value)
                 }
-                onBlur={() => handleCredentialBlur("apiKey")}
                 placeholder="Enter API Key"
                 spacing="compact"
               />
@@ -356,6 +361,7 @@ const App = () => {
                 appearance="primary"
                 isLoading={isLoading}
                 onClick={handleSaveCloudflareCredentials}
+                isDisabled={!inputsUpdated}
               >
                 Save Cloudflare Settings
               </LoadingButton>
