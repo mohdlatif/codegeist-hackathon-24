@@ -299,19 +299,6 @@ resolver.define("vectorizePages", async () => {
     const apiKey = await storage.get("cloudflare_api_key");
     const email = await storage.get("cloudflare_email");
 
-    // Validate credentials
-    if (!accountId || !apiKey || !email) {
-      return {
-        success: false,
-        message: "Please save your Cloudflare credentials first",
-      };
-    }
-
-    const client = new Cloudflare({
-      apiEmail: email,
-      apiToken: apiKey,
-    });
-
     // Get current pages content
     const pages = await getSavedPagesContent();
     console.log("Pages retrieved:", pages?.length || 0, "pages");
@@ -337,7 +324,7 @@ resolver.define("vectorizePages", async () => {
 
         return {
           id: page.id.toString(),
-          values: result[0], // Use the first (and only) embedding
+          values: result.data[0], // Use the first (and only) embedding
           metadata: {
             title: page.title,
             content: page.body.substring(0, 1000),
@@ -348,113 +335,30 @@ resolver.define("vectorizePages", async () => {
       })
     );
 
-    // Get previous vectorization metadata
-    const previousMetadata =
-      (await storage.get("vectorization_metadata")) || {};
-    const previousPageIds = previousMetadata.page_ids || [];
-    const previousHashes = previousMetadata.contentHashes || {};
-
-    // Find unselected pages by comparing previous and current page IDs
-    const unselectedPageIds = previousPageIds.filter(
-      (id) => !pages.some((page) => page.id.toString() === id.toString())
-    );
-
-    // If there are unselected pages, delete them from the vector index
-    if (unselectedPageIds.length > 0) {
-      console.log(
-        `Deleting ${unselectedPageIds.length} unselected pages from vector index...`
-      );
-      try {
-        const deleteResponse = await client.vectorize.indexes.deleteByIds(
-          INDEX_NAME,
-          {
-            account_id: accountId,
-            ids: unselectedPageIds,
-          }
-        );
-
-        if (deleteResponse && deleteResponse.success) {
-          console.log(
-            `Successfully deleted vectors with mutation ID: ${deleteResponse.result?.mutationId}`
-          );
-        } else {
-          console.warn("Vector deletion response:", deleteResponse);
-        }
-      } catch (deleteError) {
-        console.error("Error deleting vectors:", deleteError);
-        // Continue with the process even if deletion fails
-      }
-    }
-
-    // Calculate current content hashes and find pages to update
-    const currentHashes = {};
-    const pagesToUpdate = [];
-
-    vectors.forEach((vector) => {
-      const contentToHash = `${vector.metadata.title}|${vector.metadata.content}`;
-      const contentHash = require("crypto")
-        .createHash("md5")
-        .update(contentToHash)
-        .digest("hex");
-
-      currentHashes[vector.id] = contentHash;
-
-      // Check if content has changed or if it's a new page
-      if (
-        !previousHashes[vector.id] ||
-        previousHashes[vector.id] !== contentHash
-      ) {
-        pagesToUpdate.push(vector);
-      }
+    // Upsert vectors to Cloudflare
+    const client = new Cloudflare({
+      apiEmail: email,
+      apiToken: apiKey,
     });
 
-    // If no changes and no deletions, return early
-    if (pagesToUpdate.length === 0 && unselectedPageIds.length === 0) {
-      return {
-        success: true,
-        message: "No content changes detected. Skipping vectorization.",
-        vectorized_count: 0,
-        removed_count: 0,
-        status: "success",
-      };
-    }
+    // Convert vectors to NDJSON format
+    const ndjsonVectors = vectors
+      .map((vector) => JSON.stringify(vector))
+      .join("\n");
 
-    // Process updates if there are any
-    let updateResult = null;
-    if (pagesToUpdate.length > 0) {
-      const ndjsonVectors = pagesToUpdate
-        .map((vector) => JSON.stringify(vector))
-        .join("\n");
-      updateResult = await client.vectorize.indexes.upsert(INDEX_NAME, {
-        account_id: accountId,
-        body: ndjsonVectors,
-        unparsableBehavior: "error",
-      });
-    }
+    console.log("Upserting vectors:", vectors.length);
 
-    // Update metadata with new state
-    await storage.set("vectorization_metadata", {
-      last_updated: new Date().toISOString(),
-      page_count: pages.length,
-      page_ids: pages.map((p) => p.id.toString()), // Ensure IDs are strings
-      contentHashes: currentHashes,
-      last_mutation_id: updateResult?.result?.mutationId || null,
+    const updateResult = await client.vectorize.indexes.upsert(INDEX_NAME, {
+      account_id: accountId,
+      body: ndjsonVectors,
     });
 
-    // Return comprehensive status
+    console.log("Upsert result:", updateResult);
+
     return {
       success: true,
-      message: `Sync complete: ${
-        pagesToUpdate.length > 0 ? `${pagesToUpdate.length} pages updated` : ""
-      }${
-        unselectedPageIds.length > 0
-          ? `${pagesToUpdate.length > 0 ? ", " : ""}${
-              unselectedPageIds.length
-            } pages removed`
-          : ""
-      }`,
-      vectorized_count: pagesToUpdate.length,
-      removed_count: unselectedPageIds.length,
+      message: `Successfully vectorized ${vectors.length} pages`,
+      vectorized_count: vectors.length,
       status: "success",
     };
   } catch (error) {
@@ -508,8 +412,6 @@ resolver.define("testVectorQuery", async ({ payload }) => {
     );
 
     const embeddingData = await embeddingResponse.json();
-
-    // Debug log
     console.log("Embedding response:", embeddingData);
 
     if (!embeddingData.success || !embeddingData.result) {
@@ -521,12 +423,6 @@ resolver.define("testVectorQuery", async ({ payload }) => {
     }
 
     const queryEmbedding = embeddingData.result.data[0];
-    if (!Array.isArray(queryEmbedding)) {
-      return {
-        success: false,
-        message: "Invalid embedding response format",
-      };
-    }
 
     // Search vectors using the embedding
     const searchResponse = await client.vectorize.indexes.query(INDEX_NAME, {
@@ -545,13 +441,38 @@ resolver.define("testVectorQuery", async ({ payload }) => {
       };
     }
 
-    // Format the results
-    const matches = searchResponse.result.matches.map((match) => ({
-      title: match.metadata?.title || "Untitled",
-      content: match.metadata?.content || "No content available",
-      score: match.score,
-      pageId: match.metadata?.page_id || match.id,
-    }));
+    // If we don't have metadata, fetch the pages directly
+    const matches = await Promise.all(
+      searchResponse.matches.map(async (match) => {
+        try {
+          const response = await api
+            .asUser()
+            .requestConfluence(route`/wiki/api/v2/pages/${match.id}`, {
+              headers: {
+                Accept: "application/json",
+              },
+            });
+          const pageData = await response.json();
+
+          return {
+            title: pageData.title,
+            content:
+              pageData.body?.storage?.value?.substring(0, 1000) ||
+              "No content available",
+            score: match.score,
+            pageId: match.id,
+          };
+        } catch (error) {
+          console.error(`Error fetching page ${match.id}:`, error);
+          return {
+            title: "Page not found",
+            content: "Error loading page content",
+            score: match.score,
+            pageId: match.id,
+          };
+        }
+      })
+    );
 
     return {
       success: true,
