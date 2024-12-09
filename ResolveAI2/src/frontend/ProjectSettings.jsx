@@ -42,6 +42,8 @@ const App = () => {
     email: false,
     apiKey: false,
   });
+  const [queryInput, setQueryInput] = useState("");
+  const [queryResults, setQueryResults] = useState(null);
 
   useEffect(() => {
     invoke("getPages")
@@ -238,6 +240,19 @@ const App = () => {
       [field]: value,
     }));
     setInputsUpdated(true);
+  };
+
+  const handleTestQuery = async () => {
+    setIsLoading(true);
+    try {
+      const response = await invoke("testVectorQuery", { query: queryInput });
+      setQueryResults(response);
+    } catch (error) {
+      console.error("Query test error:", error);
+      setErrorMessage("Failed to test query: " + error.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (error) {
@@ -441,6 +456,59 @@ const App = () => {
                 </Box>
               )}
             </Stack>
+          </Stack>
+        </Box>
+      </Stack>
+      <Stack space="space.075">
+        <Box backgroundColor="color.background.neutral" padding="space.100">
+          <Heading as="h4">Testing Vector Query</Heading>
+        </Box>
+        <Box xcss={xcss({ maxWidth: "600px" })}>
+          <Stack space="space.100">
+            <Text>Test your vector database by entering a query:</Text>
+            <Textfield
+              label="Query"
+              isCompact
+              value={queryInput}
+              onChange={(e) => setQueryInput(e.target.value)}
+              placeholder="Enter your test query"
+              spacing="compact"
+            />
+            <LoadingButton
+              appearance="primary"
+              isLoading={isLoading}
+              onClick={handleTestQuery}
+              isDisabled={!queryInput.trim()}
+            >
+              Test Query
+            </LoadingButton>
+
+            {queryResults && (
+              <Box
+                backgroundColor="color.background.neutral.subtle"
+                padding="space.200"
+              >
+                <Stack space="space.200">
+                  <Text>{queryResults.message}</Text>
+                  {queryResults.success &&
+                    queryResults.matches?.map((match, index) => (
+                      <Box
+                        key={index}
+                        backgroundColor="color.background.neutral"
+                        padding="space.200"
+                      >
+                        <Stack space="space.100">
+                          <Strong>{match.title}</Strong>
+                          <Text>{match.content}</Text>
+                          <Text color="color.text.subtle">
+                            Score: {Math.round(match.score * 100)}%
+                          </Text>
+                        </Stack>
+                      </Box>
+                    ))}
+                </Stack>
+              </Box>
+            )}
           </Stack>
         </Box>
       </Stack>

@@ -316,6 +316,38 @@ resolver.define("vectorizePages", async () => {
     const pages = await getSavedPagesContent();
     console.log("Pages retrieved:", pages?.length || 0, "pages");
 
+    // Get embeddings for all pages using Cloudflare Workers AI
+    const vectors = await Promise.all(
+      pages.map(async (page) => {
+        const contentToEmbed = `${page.title} ${page.body}`;
+
+        const embeddingResponse = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/baai/bge-base-en-v1.5`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ text: [contentToEmbed] }),
+          }
+        );
+
+        const { result } = await embeddingResponse.json();
+
+        return {
+          id: page.id.toString(),
+          values: result[0], // Use the first (and only) embedding
+          metadata: {
+            title: page.title,
+            content: page.body.substring(0, 1000),
+            last_updated: new Date().toISOString(),
+            page_id: page.id.toString(),
+          },
+        };
+      })
+    );
+
     // Get previous vectorization metadata
     const previousMetadata =
       (await storage.get("vectorization_metadata")) || {};
@@ -358,18 +390,21 @@ resolver.define("vectorizePages", async () => {
     const currentHashes = {};
     const pagesToUpdate = [];
 
-    pages.forEach((page) => {
-      const contentToHash = `${page.title}|${page.body}`;
+    vectors.forEach((vector) => {
+      const contentToHash = `${vector.metadata.title}|${vector.metadata.content}`;
       const contentHash = require("crypto")
         .createHash("md5")
         .update(contentToHash)
         .digest("hex");
 
-      currentHashes[page.id] = contentHash;
+      currentHashes[vector.id] = contentHash;
 
       // Check if content has changed or if it's a new page
-      if (!previousHashes[page.id] || previousHashes[page.id] !== contentHash) {
-        pagesToUpdate.push(page);
+      if (
+        !previousHashes[vector.id] ||
+        previousHashes[vector.id] !== contentHash
+      ) {
+        pagesToUpdate.push(vector);
       }
     });
 
@@ -387,21 +422,7 @@ resolver.define("vectorizePages", async () => {
     // Process updates if there are any
     let updateResult = null;
     if (pagesToUpdate.length > 0) {
-      // Prepare vectors only for changed content
-      const vectors = pagesToUpdate.map((page) => ({
-        id: page.id.toString(), // Ensure ID is string for consistency
-        values: Array(1536)
-          .fill(0)
-          .map(() => Math.random() * 2 - 1),
-        metadata: {
-          title: page.title,
-          content: page.body.substring(0, 1000),
-          last_updated: new Date().toISOString(),
-          page_id: page.id.toString(), // Store Confluence page ID in metadata
-        },
-      }));
-
-      const ndjsonVectors = vectors
+      const ndjsonVectors = pagesToUpdate
         .map((vector) => JSON.stringify(vector))
         .join("\n");
       updateResult = await client.vectorize.indexes.upsert(INDEX_NAME, {
@@ -442,6 +463,106 @@ resolver.define("vectorizePages", async () => {
       success: false,
       message: `Vectorization failed: ${error.message}`,
       status: "error",
+    };
+  }
+});
+
+/* --------------------- Vector Testing ---------------------  */
+resolver.define("testVectorQuery", async ({ payload }) => {
+  try {
+    const { query } = payload;
+    if (!query) {
+      return { success: false, message: "Query is required" };
+    }
+
+    // Get Cloudflare credentials
+    const accountId = await storage.get("cloudflare_account_id");
+    const apiKey = await storage.get("cloudflare_api_key");
+    const email = await storage.get("cloudflare_email");
+
+    if (!accountId || !apiKey || !email) {
+      return {
+        success: false,
+        message: "Cloudflare credentials not found",
+      };
+    }
+
+    const client = new Cloudflare({
+      apiEmail: email,
+      apiToken: apiKey,
+    });
+
+    // Get embeddings from Cloudflare Workers AI
+    const embeddingResponse = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/baai/bge-base-en-v1.5`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: [query],
+        }),
+      }
+    );
+
+    const embeddingData = await embeddingResponse.json();
+
+    // Debug log
+    console.log("Embedding response:", embeddingData);
+
+    if (!embeddingData.success || !embeddingData.result) {
+      return {
+        success: false,
+        message: "Failed to generate embedding",
+        error: embeddingData.errors,
+      };
+    }
+
+    const queryEmbedding = embeddingData.result.data[0];
+    if (!Array.isArray(queryEmbedding)) {
+      return {
+        success: false,
+        message: "Invalid embedding response format",
+      };
+    }
+
+    // Search vectors using the embedding
+    const searchResponse = await client.vectorize.indexes.query(INDEX_NAME, {
+      account_id: accountId,
+      vector: queryEmbedding,
+      topK: 3,
+    });
+
+    console.log("Search response:", searchResponse);
+
+    if (!searchResponse.success) {
+      return {
+        success: false,
+        message: "Failed to query vector database",
+        error: searchResponse.errors,
+      };
+    }
+
+    // Format the results
+    const matches = searchResponse.result.matches.map((match) => ({
+      title: match.metadata?.title || "Untitled",
+      content: match.metadata?.content || "No content available",
+      score: match.score,
+      pageId: match.metadata?.page_id || match.id,
+    }));
+
+    return {
+      success: true,
+      matches,
+      message: `Found ${matches.length} relevant matches`,
+    };
+  } catch (error) {
+    console.error("Vector query error:", error);
+    return {
+      success: false,
+      message: `Query failed: ${error.message}`,
     };
   }
 });
