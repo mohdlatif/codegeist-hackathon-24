@@ -14,6 +14,7 @@ import ForgeReconciler, {
   List,
   Strong,
   ListItem,
+  Lozenge,
 } from "@forge/react";
 import { invoke } from "@forge/bridge";
 
@@ -34,6 +35,7 @@ const App = () => {
   const [messageType, setMessageType] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState(null);
+  const [showVerificationStatus, setShowVerificationStatus] = useState(false);
 
   useEffect(() => {
     invoke("getPages")
@@ -145,14 +147,12 @@ const App = () => {
   const handleVerifyToken = async () => {
     setIsLoading(true);
     try {
-      // Get actual credentials from storage first
       const storedCredentials = await invoke("getCloudflareCredentials");
-
       const response = await invoke("verifyCloudflareToken", {
-        apiKey: storedCredentials.apiKey, // Use the stored API key instead of the masked one
+        apiKey: storedCredentials.apiKey,
+        accountId: storedCredentials.accountId,
+        email: storedCredentials.email,
       });
-
-      // console.log("Verification response:", response);
 
       if (
         response &&
@@ -164,9 +164,19 @@ const App = () => {
       } else {
         setVerificationStatus("invalid");
       }
+
+      setShowVerificationStatus(true);
+      setTimeout(() => {
+        setShowVerificationStatus(false);
+      }, 2000);
     } catch (error) {
       console.error("Verification error:", error);
       setVerificationStatus("invalid");
+
+      setShowVerificationStatus(true);
+      setTimeout(() => {
+        setShowVerificationStatus(false);
+      }, 2000);
     } finally {
       setIsLoading(false);
     }
@@ -357,20 +367,17 @@ const App = () => {
               >
                 Verify Token
               </LoadingButton>
-              {verificationStatus && (
-                <Text
-                  color={
-                    verificationStatus === "valid"
-                      ? "color.text.success"
-                      : "color.text.danger"
+              {showVerificationStatus && verificationStatus && (
+                <Lozenge
+                  appearance={
+                    verificationStatus === "valid" ? "success" : "removed"
                   }
+                  isBold
                 >
                   {verificationStatus === "valid"
                     ? "✓ Token is valid and active"
-                    : verificationStatus === "invalid"
-                    ? "✗ Token verification failed"
-                    : null}
-                </Text>
+                    : "✗ Token verification failed"}
+                </Lozenge>
               )}
             </Inline>
           </Stack>

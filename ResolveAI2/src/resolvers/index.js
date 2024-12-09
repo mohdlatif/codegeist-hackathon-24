@@ -153,23 +153,25 @@ resolver.define("getCloudflareCredentials", async () => {
 });
 
 resolver.define("verifyCloudflareToken", async ({ payload }) => {
-  if (!payload || !payload.apiKey || !payload.accountId) {
-    return { success: false, message: "API Key and Account ID are required" };
+  if (!payload || !payload.apiKey) {
+    return { success: false, message: "API Key is required" };
   }
 
   try {
-    const client = new Cloudflare({
-      apiToken: payload.apiKey,
-    });
+    const response = await api.fetch(
+      "https://api.cloudflare.com/client/v4/user/tokens/verify",
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${payload.apiKey}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
-    const response = await client.accounts.tokens.verify({
-      account_id: payload.accountId,
-    });
-
-    return {
-      success: true,
-      ...response,
-    };
+    const data = await response.json();
+    // console.log("Cloudflare token verification response:", data);
+    return data;
   } catch (error) {
     console.error("Error verifying Cloudflare token:", error);
     return {
