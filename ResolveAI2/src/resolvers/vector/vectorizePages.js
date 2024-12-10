@@ -103,6 +103,30 @@ export async function vectorizePages() {
       );
     }
 
+    // Check and initialize index FIRST, before anything else
+    console.log("Checking vector index status...");
+    const checkResponse = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${INDEX_NAME}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    if (!checkResponse.ok) {
+      console.log("Vector index not found. Initializing...");
+      const initResult = await initializeVectorIndex();
+      if (!initResult.success) {
+        throw new Error(
+          `Failed to initialize vector index: ${initResult.message}`
+        );
+      }
+      console.log("Vector index initialized successfully");
+    }
+
     // Debug: List all storage keys properly
     const trackedPageIds = await storage.get("tracked_page_ids");
     console.log("Raw tracked_page_ids from storage:", trackedPageIds);

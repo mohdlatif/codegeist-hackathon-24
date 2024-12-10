@@ -259,7 +259,19 @@ const App = () => {
         }
       } else {
         setVerificationStatus("failed");
-        setErrorMessage(vectorizeResult.message);
+        // Check if it's a content retrieval error
+        if (vectorizeResult.message.includes("Unable to retrieve content")) {
+          setErrorMessage(
+            "Failed to get page content. Please try:\n" +
+              "1. Re-selecting the pages\n" +
+              "2. Ensuring you have permission to access the pages\n" +
+              "3. Checking if the pages still exist\n\n" +
+              "Error details: " +
+              vectorizeResult.message
+          );
+        } else {
+          setErrorMessage(vectorizeResult.message);
+        }
 
         // Show any specific errors
         if (vectorizeResult.details?.errors?.length > 0) {
@@ -272,7 +284,10 @@ const App = () => {
     } catch (err) {
       console.error(err);
       setVerificationStatus("failed");
-      setErrorMessage("An unexpected error occurred");
+      setErrorMessage(
+        "An error occurred while processing pages. Details: " +
+          (err.message || "Unknown error")
+      );
     } finally {
       setIsLoading(false);
     }
