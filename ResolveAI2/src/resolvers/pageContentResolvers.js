@@ -139,6 +139,12 @@ export async function getSavedPagesContent() {
 
           const bodyData = await bodyResponse.json();
 
+          // Process the Atlas Doc Format content into plain text
+          const processedBody = extractTextFromAtlasDoc(bodyData.value);
+          console.log(
+            `Processed body content for page ${pageId}, length: ${processedBody.length}`
+          );
+
           // Get space information
           const spaceResponse = await api
             .asUser()
@@ -161,7 +167,7 @@ export async function getSavedPagesContent() {
           return {
             id: pageId,
             title: pageData.title || "Untitled",
-            body: bodyData.value || "",
+            body: processedBody,
             spaceKey: spaceData.key,
             spaceId: pageData.spaceId,
             spaceName: spaceData.name,

@@ -1,4 +1,4 @@
-import { fetch } from "@forge/api";
+import api, { fetch,  route } from "@forge/api";
 import {
   getCloudflareCredentials,
   INDEX_NAME,
@@ -93,6 +93,7 @@ export async function testVectorQuery({ payload }) {
           vector: queryEmbedding,
           topK: 3,
           return_metadata: true,
+          return_vectors: false,
           metadata: {},
         }),
       }
@@ -114,6 +115,8 @@ export async function testVectorQuery({ payload }) {
         id: m.id,
         score: m.score,
         metadata: m.metadata,
+        title: m.metadata?.title,
+        content_preview: m.metadata?.content_preview,
       })),
     });
 
@@ -122,6 +125,27 @@ export async function testVectorQuery({ payload }) {
       const matches = await Promise.all(
         searchData.result.matches.map(async (match) => {
           try {
+            console.log(`Processing match: ${match.id}`, {
+              score: match.score,
+              metadata: match.metadata,
+            });
+
+            // If we have metadata, use it directly
+            if (match.metadata?.title) {
+              return {
+                title: match.metadata.title,
+                content:
+                  match.metadata.content_preview ||
+                  "No content preview available",
+                score: match.score,
+                pageId: match.id,
+                url: match.metadata.url,
+                space: match.metadata.space_name,
+                lastUpdated: match.metadata.last_updated,
+              };
+            }
+
+            // Fallback to fetching page details if no metadata
             console.log(`Fetching page details for match: ${match.id}`);
             const response = await api
               .asUser()
@@ -133,22 +157,22 @@ export async function testVectorQuery({ payload }) {
             const pageData = await response.json();
             console.log(`Page details retrieved for ${match.id}:`, {
               title: pageData.title,
-              hasContent: !!match.metadata?.content,
             });
 
             return {
               title: pageData.title,
-              content: match.metadata?.content || "No content available",
+              content: "Content not available in metadata",
               score: match.score,
               pageId: match.id,
             };
           } catch (error) {
-            console.error(`Error fetching page ${match.id}:`, error);
+            console.error(`Error processing match ${match.id}:`, error);
             return {
-              title: "Page not found",
-              content: "Error loading page content",
+              title: "Error Processing Result",
+              content: "Could not load page content",
               score: match.score,
               pageId: match.id,
+              error: error.message,
             };
           }
         })

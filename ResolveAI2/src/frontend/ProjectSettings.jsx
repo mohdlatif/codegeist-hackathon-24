@@ -221,11 +221,53 @@ const App = () => {
 
       if (vectorizeResult.success) {
         setVerificationStatus("vectorized");
-        const message = vectorizeResult.message;
-        setSuccessMessage(message);
+        setSuccessMessage(vectorizeResult.message);
+
+        // Show detailed results if there are changes
+        if (vectorizeResult.results) {
+          const details = [];
+
+          if (vectorizeResult.results.added.count > 0) {
+            details.push(
+              `Added pages: ${vectorizeResult.results.added.pages
+                .map((p) => p.title)
+                .join(", ")}`
+            );
+          }
+
+          if (vectorizeResult.results.updated.count > 0) {
+            details.push(
+              `Updated pages: ${vectorizeResult.results.updated.pages
+                .map((p) => p.title)
+                .join(", ")}`
+            );
+          }
+
+          if (vectorizeResult.results.deleted.count > 0) {
+            details.push(
+              `Deleted pages: ${vectorizeResult.results.deleted.pages
+                .map((p) => p.title)
+                .join(", ")}`
+            );
+          }
+
+          if (details.length > 0) {
+            setSuccessMessage(
+              (prev) => `${prev}\n\nDetails:\n${details.join("\n")}`
+            );
+          }
+        }
       } else {
         setVerificationStatus("failed");
         setErrorMessage(vectorizeResult.message);
+
+        // Show any specific errors
+        if (vectorizeResult.details?.errors?.length > 0) {
+          setErrorMessage(
+            (prev) =>
+              `${prev}\n\nErrors:\n${vectorizeResult.details.errors.join("\n")}`
+          );
+        }
       }
     } catch (err) {
       console.error(err);
