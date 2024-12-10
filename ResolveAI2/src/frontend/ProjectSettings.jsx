@@ -487,32 +487,14 @@ const App = () => {
         <Box xcss={xcss({ maxWidth: "600px" })}>
           <Stack space="space.100">
             <Text>
-              <Strong>Step 1: Initialize the Vector Database</Strong>
-            </Text>
-            <Text>
-              This will create or update the vector database structure with:
-            </Text>
-            <List>
-              <ListItem>768 dimensions (matching the BGE model)</ListItem>
-              <ListItem>Cosine similarity metric</ListItem>
-              <ListItem>Metadata fields for page content</ListItem>
-            </List>
-            <LoadingButton
-              appearance="primary"
-              isLoading={isLoading}
-              onClick={handleInitializeIndex}
-            >
-              Initialize Vector Index
-            </LoadingButton>
-
-            <Text>
-              <Strong>Step 2: Sync Content to Vector Database</Strong>
+              <Strong>Sync Content to Vector Database</Strong>
             </Text>
             <Text>This will process your selected pages and:</Text>
             <List>
               <ListItem>Convert page content into vectors</ListItem>
               <ListItem>Store vectors with page metadata</ListItem>
               <ListItem>Update existing vectors if content changed</ListItem>
+              <ListItem>Remove vectors for deleted pages</ListItem>
             </List>
             <LoadingButton
               appearance="primary"

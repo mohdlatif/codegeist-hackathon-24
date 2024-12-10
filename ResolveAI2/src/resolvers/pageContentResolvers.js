@@ -129,7 +129,7 @@ export async function getSavedPagesContent() {
           const bodyResponse = await api
             .asUser()
             .requestConfluence(
-              route`/wiki/api/v2/pages/${pageId}/body?body-format=storage`,
+              route`/wiki/api/v2/pages/${pageId}/body?body-format=atlas_doc_format`,
               {
                 headers: {
                   Accept: "application/json",
@@ -138,11 +138,18 @@ export async function getSavedPagesContent() {
             );
 
           const bodyData = await bodyResponse.json();
+          console.log(`Raw body data for page ${pageId}:`, {
+            hasValue: !!bodyData.value,
+            valueType: typeof bodyData.value,
+            representation: bodyData.representation,
+          });
 
           // Process the Atlas Doc Format content into plain text
           const processedBody = extractTextFromAtlasDoc(bodyData.value);
           console.log(
-            `Processed body content for page ${pageId}, length: ${processedBody.length}`
+            `Processed body content for page ${pageId}, length: ${
+              processedBody.length
+            }, preview: "${processedBody.substring(0, 100)}..."`
           );
 
           // Get space information

@@ -5,6 +5,7 @@ import {
   INDEX_NAME,
 } from "../../utils/cloudflareConfig";
 import { getSavedPagesContent } from "../pageContentResolvers";
+import { initializeVectorIndex } from "./initializeVectorIndex";
 
 // Helper to calculate a hash of the page content
 function calculateContentHash(page) {
@@ -84,6 +85,26 @@ function generateChangeSummary(changes, vectors, deleteResult) {
   return summary.join(". ");
 }
 
+// Helper to check if vector index exists
+async function checkVectorIndexExists(accountId, apiKey) {
+  try {
+    const checkResponse = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${INDEX_NAME}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    return checkResponse.ok;
+  } catch (error) {
+    console.error("Error checking vector index:", error);
+    return false;
+  }
+}
+
 export async function vectorizePages() {
   try {
     console.log("Starting vectorization process...");
@@ -101,6 +122,19 @@ export async function vectorizePages() {
       throw new Error(
         "Missing Cloudflare credentials. Please configure them in settings."
       );
+    }
+
+    // Check if index exists, initialize only if it doesn't
+    const indexExists = await checkVectorIndexExists(accountId, apiKey);
+    if (!indexExists) {
+      console.log("Vector index not found, initializing...");
+      const initResult = await initializeVectorIndex();
+      if (!initResult.success) {
+        throw new Error(
+          `Failed to initialize vector index: ${initResult.message}`
+        );
+      }
+      console.log("Vector index initialization:", initResult.message);
     }
 
     // Debug: List all storage keys properly
@@ -156,6 +190,53 @@ export async function vectorizePages() {
           "Deleting vectors for pages:",
           changes.deleted.map((p) => p.id)
         );
+
+        // First check which vectors actually exist
+        const checkResponse = await fetch(
+          `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${INDEX_NAME}/query`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              vector: new Array(768).fill(0),
+              topK: 100,
+              return_metadata: true,
+            }),
+          }
+        );
+
+        if (!checkResponse.ok) {
+          throw new Error(
+            `Failed to check existing vectors: ${await checkResponse.text()}`
+          );
+        }
+
+        const checkData = await checkResponse.json();
+        const existingIds = new Set(
+          checkData.result?.matches?.map((m) => m.id) || []
+        );
+        const vectorsToDelete = changes.deleted.filter((p) =>
+          existingIds.has(p.id.toString())
+        );
+
+        if (vectorsToDelete.length === 0) {
+          console.log("No vectors found to delete");
+          vectorizationResults.deleted = {
+            success: true,
+            count: 0,
+            pages: [],
+          };
+          return;
+        }
+
+        console.log(
+          `Found ${vectorsToDelete.length} vectors to delete:`,
+          vectorsToDelete.map((p) => p.id)
+        );
+
         const deleteResponse = await fetch(
           `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/indexes/${INDEX_NAME}/vectors/delete`,
           {
@@ -165,7 +246,7 @@ export async function vectorizePages() {
               "Content-Type": "application/json",
             },
             body: JSON.stringify({
-              vectors: changes.deleted.map((page) => page.id.toString()),
+              vectors: vectorsToDelete.map((page) => page.id.toString()),
             }),
           }
         );
@@ -176,10 +257,12 @@ export async function vectorizePages() {
         }
 
         const deleteResult = await deleteResponse.json();
+        console.log("Vector deletion result:", deleteResult);
+
         vectorizationResults.deleted = {
           success: true,
-          count: changes.deleted.length,
-          pages: changes.deleted.map((p) => ({ id: p.id, title: p.title })),
+          count: vectorsToDelete.length,
+          pages: vectorsToDelete.map((p) => ({ id: p.id, title: p.title })),
         };
       } catch (error) {
         console.error("Error deleting vectors:", error);
