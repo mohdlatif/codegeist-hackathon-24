@@ -13,7 +13,13 @@ export async function checkVectorIndex() {
       apiToken: apiKey,
     });
 
-    // ... rest of the checkVectorIndex function ...
+    // Get index information
+    const indexInfo = await client.vectorize.indexes.get(INDEX_NAME, {
+      account_id: accountId,
+    });
+
+    console.log("Index information:", indexInfo);
+    return indexInfo;
   } catch (error) {
     console.error("Error checking index:", error);
     return {

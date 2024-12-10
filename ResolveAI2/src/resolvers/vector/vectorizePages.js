@@ -1,4 +1,4 @@
-import api from "@forge/api";
+import { fetch } from "@forge/api";
 import {
   getCloudflareCredentials,
   INDEX_NAME,
@@ -13,6 +13,16 @@ export async function vectorizePages() {
     // Get current pages content
     const pages = await getSavedPagesContent();
     console.log(`Retrieved ${pages.length} pages to vectorize`);
+    // console.log("Pages:", pages);
+
+    // Example response from getSavedPagesContent
+    // Pages: [
+    //     {
+    //       id: '361192',
+    //       title: 'Power Studio',
+    //       body: "body"
+    //     }
+    //   ]
 
     // Get embeddings for all pages using Cloudflare Workers AI
     const vectors = await Promise.all(
@@ -26,7 +36,7 @@ export async function vectorizePages() {
           // Truncate content if too long (Cloudflare has a limit)
           const truncatedContent = contentToEmbed.substring(0, 2048);
 
-          const embeddingResponse = await api.fetch(
+          const embeddingResponse = await fetch(
             `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/baai/bge-base-en-v1.5`,
             {
               method: "POST",
@@ -79,6 +89,7 @@ export async function vectorizePages() {
 
     // Filter out any failed embeddings
     const validVectors = vectors.filter((v) => v !== null);
+    console.log("Valid vectors:", validVectors);
     console.log(`Generated ${validVectors.length} valid vectors`);
 
     if (validVectors.length === 0) {
@@ -103,7 +114,7 @@ export async function vectorizePages() {
     console.log("Upserting vectors to Cloudflare...");
 
     // Upsert vectors to Cloudflare
-    const upsertResponse = await api.fetch(
+    const upsertResponse = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${INDEX_NAME}/upsert`,
       {
         method: "POST",

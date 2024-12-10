@@ -1,4 +1,4 @@
-import api, { storage } from "@forge/api";
+import { storage,fetch } from "@forge/api";
 
 export const cloudflareResolvers = {
   saveCloudflareCredentials: async ({ payload }) => {
@@ -38,7 +38,7 @@ export const cloudflareResolvers = {
     }
 
     try {
-      const response = await api.fetch(
+      const response = await fetch(
         "https://api.cloudflare.com/client/v4/user/tokens/verify",
         {
           method: "GET",
