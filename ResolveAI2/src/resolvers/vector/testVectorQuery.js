@@ -1,4 +1,4 @@
-import api, { fetch,  route } from "@forge/api";
+import { fetch } from "@forge/api";
 import {
   getCloudflareCredentials,
   INDEX_NAME,
@@ -11,44 +11,16 @@ export async function testVectorQuery({ payload }) {
       return { success: false, message: "Query is required" };
     }
 
-    // Get Cloudflare credentials
-    const { accountId, apiKey, email } = await getCloudflareCredentials();
+    console.log("Starting vector search for query:", query);
 
-    // First, let's check what vectors we have in the index
-    console.log("Checking existing vectors before query...");
-    const debugResponse = await fetch(
-      `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${INDEX_NAME}/query`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          vector: Array(768).fill(0), // Zero vector to get all vectors
-          topK: 100,
-          return_metadata: true,
-          return_vectors: true,
-        }),
-      }
-    );
+    const { accountId, apiKey } = await getCloudflareCredentials();
+    console.log("Got credentials:", {
+      hasAccountId: !!accountId,
+      hasApiKey: !!apiKey,
+    });
 
-    if (debugResponse.ok) {
-      const debugData = await debugResponse.json();
-      console.log("Current vectors in index:", {
-        totalVectors: debugData.result?.matches?.length || 0,
-        vectors: debugData.result?.matches?.map((m) => ({
-          id: m.id,
-          metadata: m.metadata,
-          score: m.score,
-        })),
-      });
-    } else {
-      console.log("Failed to get current vectors:", await debugResponse.text());
-    }
-
-    // Continue with the actual query process
-    console.log("Generating embedding for query:", query);
+    // Generate embedding using BGE model
+    console.log("Generating embedding...");
     const embeddingResponse = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/baai/bge-base-en-v1.5`,
       {
@@ -57,30 +29,56 @@ export async function testVectorQuery({ payload }) {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          text: [query],
-        }),
+        body: JSON.stringify({ text: [query] }),
       }
     );
+
+    if (!embeddingResponse.ok) {
+      const errorText = await embeddingResponse.text();
+      console.error("Embedding generation failed:", {
+        status: embeddingResponse.status,
+        statusText: embeddingResponse.statusText,
+        error: errorText,
+      });
+      return {
+        success: false,
+        message: `Failed to generate embedding: ${embeddingResponse.status} ${errorText}`,
+      };
+    }
 
     const embeddingData = await embeddingResponse.json();
     console.log("Embedding generated:", {
       success: embeddingData.success,
-      vectorSize: embeddingData.result?.data?.[0]?.length,
+      hasData: !!embeddingData.result?.data,
+      vectorLength: embeddingData.result?.data?.[0]?.length,
     });
 
-    if (!embeddingData.success || !embeddingData.result) {
+    if (!embeddingData.success) {
+      console.error("Embedding generation failed:", embeddingData.errors);
       return {
         success: false,
         message: "Failed to generate embedding",
-        error: embeddingData.errors,
+        errors: embeddingData.errors,
       };
     }
 
-    const queryEmbedding = embeddingData.result.data[0];
+    // Query vectors
+    console.log("Querying vector index...");
+    const searchBody = {
+      vector: embeddingData.result.data[0],
+      topK: 5,
+      return_values: false,
+      return_metadata: true,
+      metadata: {},
+    };
+    console.log("Search request:", {
+      index: INDEX_NAME,
+      vectorLength: searchBody.vector.length,
+      topK: searchBody.topK,
+    });
 
-    // Query the vector index
-    console.log("Searching for similar vectors...");
+    console.log("Search request body:", JSON.stringify(searchBody, null, 2));
+
     const searchResponse = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${INDEX_NAME}/query`,
       {
@@ -89,111 +87,112 @@ export async function testVectorQuery({ payload }) {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          vector: queryEmbedding,
-          topK: 3,
-          return_metadata: true,
-          return_vectors: false,
-          metadata: {},
-        }),
+        body: JSON.stringify(searchBody),
       }
     );
 
     if (!searchResponse.ok) {
       const errorText = await searchResponse.text();
-      console.error("Search response error:", errorText);
+      console.error("Vector search failed:", {
+        status: searchResponse.status,
+        statusText: searchResponse.statusText,
+        error: errorText,
+        requestBody: searchBody,
+      });
       return {
         success: false,
         message: `Search failed: ${searchResponse.status} ${errorText}`,
+        debug: {
+          requestBody: searchBody,
+          vectorLength: searchBody.vector.length,
+        },
       };
     }
 
     const searchData = await searchResponse.json();
-    console.log("Search results:", {
-      totalMatches: searchData.result?.matches?.length || 0,
-      matches: searchData.result?.matches?.map((m) => ({
-        id: m.id,
-        score: m.score,
-        metadata: m.metadata,
-        title: m.metadata?.title,
-        content_preview: m.metadata?.content_preview,
-      })),
+    console.log("Search response:", {
+      success: searchData.success,
+      matchCount: searchData.result?.matches?.length || 0,
+      errors: searchData.errors,
+      firstMatchScore: searchData.result?.matches?.[0]?.score,
     });
 
-    // If we get matches, fetch the pages
-    if (searchData.result?.matches) {
-      const matches = await Promise.all(
-        searchData.result.matches.map(async (match) => {
-          try {
-            console.log(`Processing match: ${match.id}`, {
-              score: match.score,
-              metadata: match.metadata,
-            });
-
-            // If we have metadata, use it directly
-            if (match.metadata?.title) {
-              return {
-                title: match.metadata.title,
-                content:
-                  match.metadata.content_preview ||
-                  "No content preview available",
-                score: match.score,
-                pageId: match.id,
-                url: match.metadata.url,
-                space: match.metadata.space_name,
-                lastUpdated: match.metadata.last_updated,
-              };
-            }
-
-            // Fallback to fetching page details if no metadata
-            console.log(`Fetching page details for match: ${match.id}`);
-            const response = await api
-              .asUser()
-              .requestConfluence(route`/wiki/api/v2/pages/${match.id}`, {
-                headers: {
-                  Accept: "application/json",
-                },
-              });
-            const pageData = await response.json();
-            console.log(`Page details retrieved for ${match.id}:`, {
-              title: pageData.title,
-            });
-
-            return {
-              title: pageData.title,
-              content: "Content not available in metadata",
-              score: match.score,
-              pageId: match.id,
-            };
-          } catch (error) {
-            console.error(`Error processing match ${match.id}:`, error);
-            return {
-              title: "Error Processing Result",
-              content: "Could not load page content",
-              score: match.score,
-              pageId: match.id,
-              error: error.message,
-            };
-          }
-        })
-      );
-
+    if (!searchData.success) {
+      console.error("Search failed:", {
+        errors: searchData.errors,
+        result: searchData.result,
+        raw: searchData,
+      });
       return {
-        success: true,
-        matches,
-        message: `Found ${matches.length} relevant matches`,
+        success: false,
+        message: "Search failed",
+        error: searchData.errors?.[0]?.message,
+        details: searchData.errors,
       };
     }
 
+    // Process results
+    const matches = (searchData.result?.matches || [])
+      .map(({ metadata, score }) => {
+        const match = {
+          title: metadata?.title || "Untitled",
+          content: metadata?.content_preview || "",
+          score: Math.round(score * 1000) / 1000,
+          pageId: metadata?.page_id,
+          spaceKey: metadata?.space_key,
+          author: metadata?.author,
+          lastUpdated: metadata?.last_updated,
+          url: metadata?.url,
+        };
+        console.log(`Match found:`, {
+          title: match.title,
+          score: match.score,
+          hasContent: !!match.content,
+          pageId: match.pageId,
+        });
+        return match;
+      })
+      .filter((match) => {
+        const isValid = match.pageId && match.score > 0.5;
+        if (!isValid) {
+          console.log(`Filtered out match:`, {
+            pageId: match.pageId,
+            score: match.score,
+            reason: !match.pageId ? "No pageId" : "Score too low",
+          });
+        }
+        return isValid;
+      });
+
+    console.log("Search complete:", {
+      totalMatches: searchData.result?.matches?.length || 0,
+      filteredMatches: matches.length,
+      topScore: matches[0]?.score,
+    });
+
     return {
-      success: false,
-      message: "No matches found",
+      success: true,
+      matches,
+      message:
+        matches.length > 0
+          ? `Found ${matches.length} relevant matches with scores above 0.5`
+          : "No matches found with sufficient similarity",
+      query_text: query,
+      total_candidates: searchData.result?.matches?.length || 0,
+      debug: {
+        embeddingSize: embeddingData.result.data[0].length,
+        rawMatchCount: searchData.result?.matches?.length,
+        filteredMatchCount: matches.length,
+        minScore: Math.min(...(matches.map((m) => m.score) || [0])),
+        maxScore: Math.max(...(matches.map((m) => m.score) || [0])),
+      },
     };
   } catch (error) {
     console.error("Vector query error:", error);
     return {
       success: false,
       message: `Query failed: ${error.message}`,
+      error: error.stack,
     };
   }
 }

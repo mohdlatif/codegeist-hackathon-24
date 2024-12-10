@@ -14,14 +14,34 @@ import { storage } from "@forge/api";
 function extractTextFromAtlasDoc(node) {
   if (typeof node === "string") return node;
   if (!node) return "";
+
+  // Handle storage format (HTML)
+  if (typeof node === "string" && node.includes("<")) {
+    return node
+      .replace(/<[^>]*>/g, " ") // Remove HTML tags
+      .replace(/&[^;]+;/g, " ") // Remove HTML entities
+      .replace(/\s+/g, " ") // Normalize whitespace
+      .trim();
+  }
+
+  // Handle Atlas doc format
   if (node.type === "text" && node.text) {
     return node.text;
   }
+
   if (node.content && Array.isArray(node.content)) {
     return node.content
       .map((child) => extractTextFromAtlasDoc(child))
-      .join(" ");
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
+
+  // Handle paragraph breaks
+  if (node.type === "paragraph") {
+    return "\n\n";
+  }
+
   return "";
 }
 
@@ -138,12 +158,19 @@ export async function getSavedPagesContent() {
             );
 
           const bodyData = await bodyResponse.json();
+          let processedBody = "";
 
-          // Process the Atlas Doc Format content into plain text
-          const processedBody = extractTextFromAtlasDoc(bodyData.value);
-          console.log(
-            `Processed body content for page ${pageId}, length: ${processedBody.length}`
-          );
+          if (bodyData && bodyData.value) {
+            processedBody = extractTextFromAtlasDoc(bodyData.value)
+              .replace(/\n{3,}/g, "\n\n") // Normalize multiple line breaks
+              .trim();
+          }
+
+          console.log(`Processed body content for page ${pageId}:`, {
+            rawLength: bodyData?.value?.length || 0,
+            processedLength: processedBody.length,
+            preview: processedBody.substring(0, 100) + "...",
+          });
 
           // Get space information
           const spaceResponse = await api

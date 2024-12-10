@@ -5,7 +5,7 @@ import {
   INDEX_NAME,
 } from "../../utils/cloudflareConfig";
 import { getSavedPagesContent } from "../pageContentResolvers";
-
+import { initializeVectorIndex } from "./initializeVectorIndex";
 // Helper to calculate a hash of the page content
 function calculateContentHash(page) {
   const content = `${page.title}${page.body}${page.lastModified}${page.version}`;
@@ -226,10 +226,22 @@ export async function vectorizePages() {
               );
             }
 
-            const contentToEmbed = `${page.title} ${page.body || ""}`.trim();
-            console.log(
-              `Generating embedding for page ${page.id} (${page.title}), content length: ${contentToEmbed.length}`
-            );
+            const contentToEmbed = [
+              page.title,
+              page.body || "",
+              `Space: ${page.spaceName || ""}`,
+              `Author: ${page.author?.displayName || "Unknown"}`,
+              page.labels?.join(" ") || "",
+            ]
+              .join("\n")
+              .trim();
+
+            console.log(`Preparing content for page ${page.id}:`, {
+              title: page.title,
+              contentLength: contentToEmbed.length,
+              hasBody: !!page.body,
+              preview: contentToEmbed.substring(0, 100) + "...",
+            });
 
             const embeddingResponse = await fetch(
               `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/baai/bge-base-en-v1.5`,
@@ -268,13 +280,15 @@ export async function vectorizePages() {
                 space_name: page.spaceName,
                 last_updated: page.lastModified || page.created,
                 content_preview: page.body ? page.body.substring(0, 1000) : "",
-                content: page.body || "", // Store full content for better search results
+                content: page.body || "",
                 url: page.url,
                 author: page.author?.displayName || "Unknown",
                 version: page.version,
                 status: page.status,
                 type: page.type,
                 labels: page.labels || [],
+                embedding_text: contentToEmbed.substring(0, 2000),
+                last_indexed: new Date().toISOString(),
               },
             };
 
@@ -283,6 +297,16 @@ export async function vectorizePages() {
               title: vector.metadata.title,
               contentLength: vector.metadata.content.length,
               hasMetadata: !!vector.metadata,
+            });
+
+            console.log(`Detailed vector metadata for page ${page.id}:`, {
+              id: vector.id,
+              metadata: {
+                title: vector.metadata.title,
+                pageId: vector.metadata.page_id,
+                contentPreviewLength: vector.metadata.content_preview.length,
+                fullContentLength: vector.metadata.content.length,
+              },
             });
 
             return vector;
