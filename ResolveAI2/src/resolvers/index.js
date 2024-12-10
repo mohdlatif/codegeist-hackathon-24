@@ -1,17 +1,11 @@
 import Resolver from "@forge/resolver";
-import api, { route, storage } from "@forge/api";
-import Cloudflare from "cloudflare";
 import { pageResolvers } from "./pageResolvers";
 import { userResolvers } from "./userResolvers";
 import { cloudflareResolvers } from "./cloudflareResolvers";
 import {
   pageContentResolvers,
-  getSavedPagesContent,
 } from "./pageContentResolvers";
-import {
-  getCloudflareCredentials,
-  INDEX_NAME,
-} from "../utils/cloudflareConfig";
+
 import { vectorizePages } from "./vector/vectorizePages";
 import { testVectorQuery } from "./vector/testVectorQuery";
 import { checkVectorIndex } from "./vector/checkVectorIndex";

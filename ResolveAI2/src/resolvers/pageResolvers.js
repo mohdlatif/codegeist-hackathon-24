@@ -39,8 +39,24 @@ export const pageResolvers = {
   saveSelectedPages: async ({ payload }) => {
     try {
       const { pageIds } = payload;
-      await storage.set("selectedPages", pageIds);
-      return { success: true };
+      console.log("Saving page IDs to storage:", pageIds);
+
+      if (!Array.isArray(pageIds)) {
+        console.error("pageIds is not an array:", pageIds);
+        return { error: "Invalid pageIds format" };
+      }
+
+      if (pageIds.length === 0) {
+        console.warn("Attempting to save empty pageIds array");
+      }
+
+      await storage.set("tracked_page_ids", pageIds);
+
+      // Verify the save was successful
+      const savedIds = await storage.get("tracked_page_ids");
+      console.log("Verified saved page IDs:", savedIds);
+
+      return { success: true, savedIds };
     } catch (error) {
       console.error("Error saving pages:", error);
       return { error: error.message || "Failed to save pages" };
@@ -49,7 +65,7 @@ export const pageResolvers = {
 
   getSavedPages: async () => {
     try {
-      const pageIds = (await storage.get("selectedPages")) || [];
+      const pageIds = (await storage.get("tracked_page_ids")) || [];
       if (pageIds.length === 0) return [];
 
       const savedPages = await Promise.all(
@@ -73,7 +89,7 @@ export const pageResolvers = {
 
   getSelectedPages: async () => {
     try {
-      const pageIds = (await storage.get("selectedPages")) || [];
+      const pageIds = (await storage.get("tracked_page_ids")) || [];
       return pageIds;
     } catch (error) {
       console.error("Error fetching selected pages:", error);

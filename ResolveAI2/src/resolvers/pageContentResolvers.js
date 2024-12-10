@@ -1,5 +1,5 @@
-import api, { route, storage } from "@forge/api";
-import validator from "validator";
+import api, { route } from "@forge/api";
+import { storage } from "@forge/api";
 
 // This file handles retrieving and processing content from saved Confluence pages
 // The flow is:
@@ -35,6 +35,61 @@ function cleanText(text) {
   return validator.stripLow(unescaped, true).replace(/\s+/g, " ").trim();
 }
 
+// Helper function to get user details
+async function getUserDetails(accountId) {
+  try {
+    const userResponse = await api
+      .asUser()
+      .requestConfluence(route`/wiki/api/v2/users/${accountId}`, {
+        headers: {
+          Accept: "application/json",
+        },
+      });
+
+    const userData = await userResponse.json();
+    return {
+      accountId: userData.accountId,
+      displayName: userData.displayName,
+      email: userData.email,
+      picture: userData.picture?.path || null,
+    };
+  } catch (error) {
+    console.warn(`Could not fetch user details for ${accountId}:`, error);
+    return {
+      accountId,
+      displayName: "Unknown User",
+      email: null,
+      picture: null,
+    };
+  }
+}
+
+// Helper function to ensure base URL is set
+async function getBaseUrl() {
+  let baseUrl = await storage.get("confluence_base_url");
+  if (!baseUrl) {
+    // Try to get it from the current context
+    try {
+      const siteResponse = await api
+        .asUser()
+        .requestConfluence(route`/wiki/api/v2/settings/look-and-feel`, {
+          headers: {
+            Accept: "application/json",
+          },
+        });
+      const siteData = await siteResponse.json();
+      baseUrl = siteData.baseUrl || "";
+
+      // Store it for future use
+      await storage.set("confluence_base_url", baseUrl);
+    } catch (error) {
+      console.warn("Could not determine base URL:", error);
+      baseUrl = "";
+    }
+  }
+  return baseUrl;
+}
+
 // Main function that:
 // 1. Retrieves saved page IDs from storage
 // 2. Fetches each page's content from Confluence API
@@ -43,72 +98,114 @@ function cleanText(text) {
 // Returns: Array of page objects with { id, title, body } or error object
 export async function getSavedPagesContent() {
   try {
-    const pageIds = (await storage.get("selectedPages")) || [];
-    if (pageIds.length === 0) return [];
+    // Get stored page IDs
+    const pageIds = (await storage.get("tracked_page_ids")) || [];
+    console.log("Retrieved page IDs:", pageIds);
 
-    const pagesContent = await Promise.all(
+    if (!pageIds.length) {
+      console.log("No pages found in storage");
+      return [];
+    }
+
+    // Get base URL once for all pages
+    const baseUrl = await getBaseUrl();
+
+    // Fetch detailed content for each page
+    const pages = await Promise.all(
       pageIds.map(async (pageId) => {
         try {
-          const response = await api
+          // Get page details
+          const pageResponse = await api
+            .asUser()
+            .requestConfluence(route`/wiki/api/v2/pages/${pageId}`, {
+              headers: {
+                Accept: "application/json",
+              },
+            });
+
+          const pageData = await pageResponse.json();
+
+          // Get page body content
+          const bodyResponse = await api
             .asUser()
             .requestConfluence(
-              route`/wiki/api/v2/pages/${pageId}?body-format=ATLAS_DOC_FORMAT`,
+              route`/wiki/api/v2/pages/${pageId}/body?body-format=storage`,
               {
                 headers: {
                   Accept: "application/json",
                 },
               }
             );
-          const pageData = await response.json();
 
-          if (!pageData.body?.atlas_doc_format?.value) {
-            console.warn(`No body value found for page ${pageId}`);
-            return {
-              id: pageData.id,
-              title: pageData.title,
-              body: "",
-            };
-          }
+          const bodyData = await bodyResponse.json();
 
-          let bodyContent;
-          try {
-            bodyContent = JSON.parse(pageData.body.atlas_doc_format.value);
-          } catch (parseError) {
-            console.error(
-              `Error parsing body content for page ${pageId}:`,
-              parseError
-            );
-            return {
-              id: pageData.id,
-              title: pageData.title,
-              body: cleanText(pageData.body.atlas_doc_format.value) || "",
-            };
-          }
+          // Get space information
+          const spaceResponse = await api
+            .asUser()
+            .requestConfluence(route`/wiki/api/v2/spaces/${pageData.spaceId}`, {
+              headers: {
+                Accept: "application/json",
+              },
+            });
 
-          const plainText = extractTextFromAtlasDoc(bodyContent);
-          const cleanedText = cleanText(plainText);
+          const spaceData = await spaceResponse.json();
 
-          return {
-            id: pageData.id,
-            title: pageData.title,
-            body: cleanedText,
-          };
-        } catch (pageError) {
-          console.error(`Error processing page ${pageId}:`, pageError);
+          // Get author details
+          const author = await getUserDetails(pageData.authorId);
+
+          // Construct the page URL
+          const pageUrl = baseUrl
+            ? `${baseUrl}/wiki/spaces/${spaceData.key}/pages/${pageId}`
+            : `spaces/${spaceData.key}/pages/${pageId}`;
+
           return {
             id: pageId,
-            title: "Error loading page",
+            title: pageData.title || "Untitled",
+            body: bodyData.value || "",
+            spaceKey: spaceData.key,
+            spaceId: pageData.spaceId,
+            spaceName: spaceData.name,
+            author,
+            lastModified: pageData.version.when,
+            created: pageData.createdAt,
+            url: pageUrl,
+            version: pageData.version.number,
+            status: pageData.status,
+            type: pageData.type,
+            // Add labels if available
+            labels: pageData.labels?.results || [],
+          };
+        } catch (error) {
+          console.error(`Error fetching content for page ${pageId}:`, error);
+          // Return a minimal object instead of null for failed fetches
+          return {
+            id: pageId,
+            title: "Error Loading Page",
             body: "",
+            error: error.message,
+            status: "error",
           };
         }
       })
     );
 
-    const validPages = pagesContent.filter((page) => page.body !== undefined);
+    // Filter out pages with errors but log them
+    const validPages = pages.filter((page) => !page.error);
+    const errorPages = pages.filter((page) => page.error);
+
+    if (errorPages.length > 0) {
+      console.warn(
+        `Failed to fetch ${errorPages.length} pages:`,
+        errorPages.map((p) => ({ id: p.id, error: p.error }))
+      );
+    }
+
+    console.log(`Successfully retrieved ${validPages.length} pages`);
+
     return validPages;
   } catch (error) {
-    console.error("Error fetching pages content:", error);
-    return { error: error.message || "Failed to fetch pages content" };
+    console.error("Error getting saved pages content:", error);
+    throw error;
   }
 }
 
