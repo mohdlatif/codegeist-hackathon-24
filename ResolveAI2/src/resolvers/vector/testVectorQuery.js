@@ -68,7 +68,7 @@ export async function testVectorQuery({ payload }) {
       vector: embeddingData.result.data[0],
       topK: 5,
       return_values: false,
-      return_metadata: true,
+      return_metadata: "all",
       metadata: {},
     };
     console.log("Search request:", {
@@ -110,53 +110,39 @@ export async function testVectorQuery({ payload }) {
     }
 
     const searchData = await searchResponse.json();
-    console.log("Search response:", {
-      success: searchData.success,
-      matchCount: searchData.result?.matches?.length || 0,
-      errors: searchData.errors,
-      firstMatchScore: searchData.result?.matches?.[0]?.score,
-    });
-
-    if (!searchData.success) {
-      console.error("Search failed:", {
-        errors: searchData.errors,
-        result: searchData.result,
-        raw: searchData,
-      });
-      return {
-        success: false,
-        message: "Search failed",
-        error: searchData.errors?.[0]?.message,
-        details: searchData.errors,
-      };
-    }
+    console.log(
+      "Raw search response:",
+      JSON.stringify(searchData.result, null, 2)
+    );
 
     // Process results
     const matches = (searchData.result?.matches || [])
-      .map(({ metadata, score }) => {
-        const match = {
-          title: metadata?.title || "Untitled",
-          content: metadata?.content_preview || "",
-          score: Math.round(score * 1000) / 1000,
-          pageId: metadata?.page_id,
-          spaceKey: metadata?.space_key,
-          author: metadata?.author,
-          lastUpdated: metadata?.last_updated,
-          url: metadata?.url,
-        };
-        console.log(`Match found:`, {
-          title: match.title,
+      .map((match) => {
+        // The match.id contains our page_id since that's how we stored it
+        const match_id = match.id;
+        console.log("Processing match:", {
+          id: match_id,
           score: match.score,
-          hasContent: !!match.content,
-          pageId: match.pageId,
+          metadata: match.metadata,
         });
-        return match;
+
+        return {
+          title: match.metadata?.title || "Untitled",
+          content: match.metadata?.content_preview || "",
+          score: Math.round(match.score * 1000) / 1000, // 3 decimal places
+          pageId: match_id, // Use the match.id as our pageId
+          spaceKey: match.metadata?.space_key,
+          author: match.metadata?.author,
+          lastUpdated: match.metadata?.last_updated,
+          url: match.metadata?.url,
+        };
       })
       .filter((match) => {
         const isValid = match.pageId && match.score > 0.5;
         if (!isValid) {
           console.log(`Filtered out match:`, {
             pageId: match.pageId,
+            title: match.title,
             score: match.score,
             reason: !match.pageId ? "No pageId" : "Score too low",
           });
@@ -164,10 +150,20 @@ export async function testVectorQuery({ payload }) {
         return isValid;
       });
 
+    // Sort matches by score in descending order
+    matches.sort((a, b) => b.score - a.score);
+
     console.log("Search complete:", {
+      query: query,
       totalMatches: searchData.result?.matches?.length || 0,
       filteredMatches: matches.length,
-      topScore: matches[0]?.score,
+      topMatch: matches[0]
+        ? {
+            title: matches[0].title,
+            score: matches[0].score,
+            pageId: matches[0].pageId,
+          }
+        : null,
     });
 
     return {

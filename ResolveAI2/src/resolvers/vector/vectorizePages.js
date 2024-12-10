@@ -12,7 +12,7 @@ function calculateContentHash(page) {
   return content.length.toString() + "-" + content.slice(0, 50); // Simple hash for demo
 }
 
-// Helper to compare pages with their previous state
+// Helper to analyze page changes
 async function analyzePageChanges(currentPages, previousState) {
   const changes = {
     unchanged: [],
@@ -24,6 +24,13 @@ async function analyzePageChanges(currentPages, previousState) {
   // Create maps for easier lookup
   const currentPagesMap = new Map(currentPages.map((page) => [page.id, page]));
   const previousPagesMap = new Map(Object.entries(previousState || {}));
+
+  console.log("Analyzing changes:", {
+    currentPages: currentPagesMap.size,
+    previousPages: previousPagesMap.size,
+    currentIds: Array.from(currentPagesMap.keys()),
+    previousIds: Array.from(previousPagesMap.keys()),
+  });
 
   // Find unchanged, added, and updated pages
   for (const [pageId, currentPage] of currentPagesMap.entries()) {
@@ -154,57 +161,59 @@ export async function vectorizePages() {
 
     // Get current pages content
     const currentPages = await getSavedPagesContent();
+    console.log(
+      "Retrieved current pages:",
+      currentPages.map((p) => ({ id: p.id, title: p.title }))
+    );
 
     // Get previous state from storage
     const previousState = (await storage.get("vectorized_pages_state")) || {};
+    console.log("Previous state:", previousState);
 
     // Analyze changes
     const changes = await analyzePageChanges(currentPages, previousState);
     console.log("Detected changes:", {
-      added: changes.added.length,
-      updated: changes.updated.length,
-      deleted: changes.deleted.length,
+      added: changes.added.map((p) => ({ id: p.id, title: p.title })),
+      updated: changes.updated.map((p) => ({ id: p.id, title: p.title })),
+      deleted: changes.deleted.map((p) => ({ id: p.id, title: p.title })),
       unchanged: changes.unchanged.length,
     });
 
-    // Track unchanged pages
-    vectorizationResults.unchanged = {
-      count: changes.unchanged.length,
-      pages: changes.unchanged.map((p) => ({ id: p.id, title: p.title })),
-    };
-
-    // Handle deletions if any
+    // Handle deletions first
     if (changes.deleted.length > 0) {
       try {
-        console.log(
-          "Deleting vectors for pages:",
-          changes.deleted.map((p) => p.id)
-        );
+        const deleteIds = changes.deleted.map((page) => page.id.toString());
+        console.log("Deleting vectors for pages:", deleteIds);
+
         const deleteResponse = await fetch(
-          `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/indexes/${INDEX_NAME}/vectors/delete`,
+          `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${INDEX_NAME}/delete`,
           {
             method: "POST",
             headers: {
               Authorization: `Bearer ${apiKey}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({
-              vectors: changes.deleted.map((page) => page.id.toString()),
-            }),
+            body: JSON.stringify({ ids: deleteIds }),
           }
         );
 
-        if (!deleteResponse.ok) {
-          const errorText = await deleteResponse.text();
-          throw new Error(`Delete failed: ${errorText}`);
+        const deleteResult = await deleteResponse.json();
+        console.log("Delete response:", deleteResult);
+
+        if (!deleteResult.success) {
+          throw new Error(
+            `Delete operation failed: ${JSON.stringify(deleteResult.errors)}`
+          );
         }
 
-        const deleteResult = await deleteResponse.json();
         vectorizationResults.deleted = {
           success: true,
           count: changes.deleted.length,
           pages: changes.deleted.map((p) => ({ id: p.id, title: p.title })),
         };
+
+        // Remove deleted pages from previous state
+        deleteIds.forEach((id) => delete previousState[id]);
       } catch (error) {
         console.error("Error deleting vectors:", error);
         vectorizationResults.errors.push(
@@ -352,7 +361,7 @@ export async function vectorizePages() {
     }
 
     // Update stored state with new content hashes
-    const newState = {};
+    const newState = { ...previousState };
     for (const page of currentPages) {
       newState[page.id] = {
         contentHash: calculateContentHash(page),
@@ -370,22 +379,21 @@ export async function vectorizePages() {
       changes.deleted.length > 0;
     const allSuccessful = vectorizationResults.errors.length === 0;
 
-    const changeSummary = generateChangeSummary(changes);
-
     return {
       success: allSuccessful,
       message: hasChanges
         ? allSuccessful
-          ? `Successfully processed changes: ${changeSummary}`
-          : `Partially processed changes with errors: ${changeSummary}`
+          ? `Successfully processed all changes: added ${changes.added.length}, updated ${changes.updated.length}, deleted ${changes.deleted.length}, unchanged ${changes.unchanged.length}`
+          : `Partially processed changes with errors: ${vectorizationResults.errors.join(
+              ", "
+            )}`
         : "No changes detected in pages",
       results: vectorizationResults,
-      details: {
-        added: vectorizationResults.added,
-        updated: vectorizationResults.updated,
-        deleted: vectorizationResults.deleted,
-        unchanged: vectorizationResults.unchanged,
-        errors: vectorizationResults.errors,
+      changes: {
+        added: changes.added.length,
+        updated: changes.updated.length,
+        deleted: changes.deleted.length,
+        unchanged: changes.unchanged.length,
       },
     };
   } catch (error) {
@@ -394,9 +402,6 @@ export async function vectorizePages() {
       success: false,
       message: `Vectorization failed: ${error.message}`,
       error: error.toString(),
-      details: {
-        errors: [error.message],
-      },
     };
   }
 }

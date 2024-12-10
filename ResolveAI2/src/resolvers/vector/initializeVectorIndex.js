@@ -52,7 +52,7 @@ export async function initializeVectorIndex() {
         "Vector index already exists. Proceeding to create metadata indexes..."
       );
     } else {
-      // If index doesn't exist, create it with metadata fields
+      // If index doesn't exist, create it without metadata_fields
       const createResponse = await fetch(
         `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes`,
         {
@@ -67,12 +67,6 @@ export async function initializeVectorIndex() {
             config: {
               dimensions: 768,
               metric: "cosine",
-              index_type: "FLAT",
-              metadata_fields: METADATA_INDEXES.map(({ propertyName }) => ({
-                name: propertyName,
-                type: "text",
-                description: `Metadata for ${propertyName}`,
-              })),
             },
           }),
         }
