@@ -13,6 +13,7 @@ import ForgeReconciler, {
   LoadingButton,
   List,
   Strong,
+  CodeBlock,
   ListItem,
   Lozenge,
 } from "@forge/react";
@@ -44,6 +45,7 @@ const App = () => {
   });
   const [queryInput, setQueryInput] = useState("");
   const [queryResults, setQueryResults] = useState(null);
+  const [indexInfo, setIndexInfo] = useState(null);
 
   useEffect(() => {
     invoke("getPages")
@@ -255,6 +257,38 @@ const App = () => {
     }
   };
 
+  const handleInspectIndex = async () => {
+    setIsLoading(true);
+    try {
+      const response = await invoke("inspectVectorIndex");
+      console.log("Index inspection result:", response);
+      setIndexInfo(response);
+    } catch (error) {
+      console.error("Index inspection error:", error);
+      setErrorMessage("Failed to inspect index: " + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleInitializeIndex = async () => {
+    setIsLoading(true);
+    try {
+      const response = await invoke("initializeVectorIndex");
+      console.log("Index initialization result:", response);
+      if (response.success) {
+        setSuccessMessage("Vector index initialized successfully!");
+      } else {
+        setErrorMessage(response.message);
+      }
+    } catch (error) {
+      console.error("Index initialization error:", error);
+      setErrorMessage("Failed to initialize index: " + error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (error) {
     return (
       <Stack space="space.400">
@@ -411,51 +445,128 @@ const App = () => {
         <Box xcss={xcss({ maxWidth: "600px" })}>
           <Stack space="space.100">
             <Text>
-              <Strong>
-                Sync selected pages with the vector database. This process will:
-              </Strong>
+              <Strong>Step 1: Initialize the Vector Database</Strong>
             </Text>
-            <List type="unordered">
-              <ListItem>
-                Index new pages that haven't been vectorized before
-              </ListItem>
-              <ListItem>
-                Update content for pages that have been modified
-              </ListItem>
-              <ListItem>Skip unchanged pages to optimize processing</ListItem>
-              <ListItem>
-                Track changes using content hashing for efficiency
-              </ListItem>
+            <Text>
+              This will create or update the vector database structure with:
+            </Text>
+            <List>
+              <ListItem>768 dimensions (matching the BGE model)</ListItem>
+              <ListItem>Cosine similarity metric</ListItem>
+              <ListItem>Metadata fields for page content</ListItem>
             </List>
-            <Stack space="space.100">
-              <LoadingButton
-                appearance="primary"
-                isLoading={isLoading}
-                onClick={handleFetchPagesContent}
+            <LoadingButton
+              appearance="primary"
+              isLoading={isLoading}
+              onClick={handleInitializeIndex}
+            >
+              Initialize Vector Index
+            </LoadingButton>
+
+            <Text>
+              <Strong>Step 2: Sync Content to Vector Database</Strong>
+            </Text>
+            <Text>This will process your selected pages and:</Text>
+            <List>
+              <ListItem>Convert page content into vectors</ListItem>
+              <ListItem>Store vectors with page metadata</ListItem>
+              <ListItem>Update existing vectors if content changed</ListItem>
+            </List>
+            <LoadingButton
+              appearance="primary"
+              isLoading={isLoading}
+              onClick={handleFetchPagesContent}
+            >
+              Sync Pages to Vector DB
+            </LoadingButton>
+
+            {/* Success Message */}
+            {successMessage && (
+              <Box
+                backgroundColor="color.background.success.subtle"
+                padding="space.150"
               >
-                Sync Pages to Vector DB
-              </LoadingButton>
+                <Text color="color.text.success">✓ {successMessage}</Text>
+              </Box>
+            )}
 
-              {/* Success Message */}
-              {successMessage && (
-                <Box
-                  backgroundColor="color.background.success.subtle"
-                  padding="space.150"
-                >
-                  <Text color="color.text.success">✓ {successMessage}</Text>
-                </Box>
-              )}
+            {/* Error Message */}
+            {errorMessage && (
+              <Box
+                backgroundColor="color.background.danger.subtle"
+                padding="space.150"
+              >
+                <Text color="color.text.danger">✗ {errorMessage}</Text>
+              </Box>
+            )}
+          </Stack>
+        </Box>
+      </Stack>
+      <Stack space="space.075">
+        <Box backgroundColor="color.background.neutral" padding="space.100">
+          <Heading as="h4">Vector Index Status</Heading>
+        </Box>
+        <Box xcss={xcss({ maxWidth: "600px" })}>
+          <Stack space="space.100">
+            <LoadingButton
+              appearance="primary"
+              isLoading={isLoading}
+              onClick={handleInspectIndex}
+            >
+              Inspect Vector Index
+            </LoadingButton>
 
-              {/* Error Message */}
-              {errorMessage && (
-                <Box
-                  backgroundColor="color.background.danger.subtle"
-                  padding="space.150"
-                >
-                  <Text color="color.text.danger">✗ {errorMessage}</Text>
-                </Box>
-              )}
-            </Stack>
+            {indexInfo && (
+              <Box
+                backgroundColor="color.background.neutral.subtle"
+                padding="space.200"
+              >
+                <Stack space="space.100">
+                  <Text>Index Configuration:</Text>
+                  <Box
+                    padding="space.100"
+                    backgroundColor="color.background.neutral"
+                  >
+                    <Stack space="space.050">
+                      <Text>Created: {indexInfo.index?.created_on}</Text>
+                      <Text>
+                        Dimensions: {indexInfo.index?.config?.dimensions}
+                      </Text>
+                      <Text>Metric: {indexInfo.index?.config?.metric}</Text>
+                    </Stack>
+                  </Box>
+
+                  <Text>Vectors Status:</Text>
+                  <Box
+                    padding="space.100"
+                    backgroundColor="color.background.neutral"
+                  >
+                    <Stack space="space.050">
+                      <Text>Count: {indexInfo.vectors?.count || 0}</Text>
+                      {indexInfo.vectors?.message && (
+                        <Text color="color.text.subtle">
+                          {indexInfo.vectors.message}
+                        </Text>
+                      )}
+                    </Stack>
+                  </Box>
+
+                  {indexInfo.vectors?.sample?.length > 0 && (
+                    <>
+                      <Text>Sample Vectors:</Text>
+                      <Box
+                        padding="space.100"
+                        backgroundColor="color.background.neutral"
+                      >
+                        <pre>
+                          {JSON.stringify(indexInfo.vectors.sample, null, 2)}
+                        </pre>
+                      </Box>
+                    </>
+                  )}
+                </Stack>
+              </Box>
+            )}
           </Stack>
         </Box>
       </Stack>
@@ -465,7 +576,7 @@ const App = () => {
         </Box>
         <Box xcss={xcss({ maxWidth: "600px" })}>
           <Stack space="space.100">
-            <Text>Test your vector database by entering a query:</Text>
+            <Text>Then test your vector database by entering a query:</Text>
             <Textfield
               label="Query"
               isCompact
