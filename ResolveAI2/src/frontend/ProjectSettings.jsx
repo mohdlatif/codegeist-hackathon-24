@@ -14,6 +14,7 @@ import ForgeReconciler, {
   List,
   Strong,
   CodeBlock,
+  TextArea,
   ListItem,
   Lozenge,
 } from "@forge/react";
@@ -46,6 +47,11 @@ const App = () => {
   const [queryInput, setQueryInput] = useState("");
   const [queryResults, setQueryResults] = useState(null);
   const [indexInfo, setIndexInfo] = useState(null);
+  const [openAiSettings, setOpenAiSettings] = useState({
+    apiKey: "",
+    systemPrompt: "",
+  });
+  const [openAiInputsUpdated, setOpenAiInputsUpdated] = useState(false);
 
   useEffect(() => {
     invoke("getPages")
@@ -97,6 +103,19 @@ const App = () => {
             accountId: "••••" + response.accountId.slice(-4),
             email: response.email.replace(/(.{2})(.*)(@.*)/, "$1•••$3"),
             apiKey: "••••" + response.apiKey.slice(-4),
+          });
+        }
+      })
+      .catch((err) => setError(err.message));
+
+    invoke("getOpenAiSettings")
+      .then((response) => {
+        if (response.error) {
+          setError(response.error);
+        } else if (response) {
+          setOpenAiSettings({
+            apiKey: response.apiKey ? "••••" + response.apiKey.slice(-4) : "",
+            systemPrompt: response.systemPrompt || "",
           });
         }
       })
@@ -346,6 +365,68 @@ const App = () => {
     }
   };
 
+  const handleOpenAiChange = (field, value) => {
+    console.log(`Changing ${field} to:`, field === "apiKey" ? "****" : value);
+    setOpenAiSettings((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+    setOpenAiInputsUpdated(true);
+  };
+
+  const handleSaveOpenAiSettings = async () => {
+    setIsLoading(true);
+    try {
+      // Get the current stored settings
+      const storedSettings = await invoke("getOpenAiSettings");
+      console.log("Current stored OpenAI settings:", {
+        apiKey: storedSettings.apiKey
+          ? "••••" + storedSettings.apiKey.slice(-4)
+          : "(empty)",
+        systemPrompt: storedSettings.systemPrompt || "(empty)",
+      });
+
+      // Create payload with actual values
+      const payload = {};
+
+      // If the field is not masked (new value entered), use the new value
+      if (!openAiSettings.apiKey.includes("•")) {
+        payload.apiKey = openAiSettings.apiKey;
+      }
+
+      // Always send system prompt since it's not masked
+      payload.systemPrompt = openAiSettings.systemPrompt;
+
+      console.log("Saving with payload:", {
+        apiKey: payload.apiKey ? "••••" + payload.apiKey.slice(-4) : "(empty)",
+        systemPrompt: payload.systemPrompt || "(empty)",
+      });
+
+      // Save the settings
+      const response = await invoke("saveOpenAiSettings", { payload });
+      console.log("Save response:", response);
+
+      if (response.success) {
+        // Get the fresh settings
+        const updatedSettings = await invoke("getOpenAiSettings");
+
+        // Display masked version to user
+        setOpenAiSettings({
+          apiKey: updatedSettings.apiKey
+            ? "••••" + updatedSettings.apiKey.slice(-4)
+            : "",
+          systemPrompt: updatedSettings.systemPrompt || "",
+        });
+        setOpenAiInputsUpdated(false);
+      }
+    } catch (err) {
+      console.error("Error saving OpenAI settings:", err);
+      setError(err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (error) {
     return (
       <Stack space="space.400">
@@ -492,6 +573,44 @@ const App = () => {
                 </Lozenge>
               )}
             </Inline>
+          </Stack>
+        </Box>
+      </Stack>
+      <Stack space="space.075">
+        <Box backgroundColor="color.background.neutral" padding="space.100">
+          <Heading as="h4">OpenAI Settings</Heading>
+        </Box>
+        <Box xcss={xcss({ maxWidth: "600px" })}>
+          <Stack space="space.100">
+            <Text>Configure OpenAI settings:</Text>
+            <Textfield
+              label="API Key"
+              isCompact
+              value={openAiSettings.apiKey || ""}
+              onChange={(e) => handleOpenAiChange("apiKey", e.target.value)}
+              placeholder="Enter OpenAI API Key"
+              spacing="compact"
+            />
+            <TextArea
+              label="System Prompt"
+              isCompact={false}
+              value={openAiSettings.systemPrompt || ""}
+              onChange={(e) =>
+                handleOpenAiChange("systemPrompt", e.target.value)
+              }
+              placeholder="Enter system prompt for the AI"
+              spacing="compact"
+              minimumRows={7}
+              multiline
+            />
+            <LoadingButton
+              appearance="primary"
+              isLoading={isLoading}
+              onClick={handleSaveOpenAiSettings}
+              isDisabled={!openAiInputsUpdated}
+            >
+              Save OpenAI Settings
+            </LoadingButton>
           </Stack>
         </Box>
       </Stack>

@@ -2,15 +2,15 @@ import Resolver from "@forge/resolver";
 import { pageResolvers } from "./pageResolvers";
 import { userResolvers } from "./userResolvers";
 import { cloudflareResolvers } from "./cloudflareResolvers";
-import {
-  pageContentResolvers,
-} from "./pageContentResolvers";
+import { pageContentResolvers } from "./pageContentResolvers";
 
 import { vectorizePages } from "./vector/vectorizePages";
 import { testVectorQuery } from "./vector/testVectorQuery";
 import { checkVectorIndex } from "./vector/checkVectorIndex";
 import { inspectVectorIndex } from "./vector/inspectVectorIndex";
 import { initializeVectorIndex } from "./vector/initializeVectorIndex";
+import { openAiResolvers } from "./openAiResolvers";
+
 const resolver = new Resolver();
 
 /* --------------------- Pages ---------------------  */
@@ -52,5 +52,11 @@ resolver.define("inspectVectorIndex", inspectVectorIndex);
 
 // Add this resolver to create/update the index
 resolver.define("initializeVectorIndex", initializeVectorIndex);
+
+/* --------------------- OpenAI Settings ---------------------  */
+// Register OpenAI resolvers
+Object.entries(openAiResolvers).forEach(([name, handler]) => {
+  resolver.define(name, handler);
+});
 
 export const handler = resolver.getDefinitions();
