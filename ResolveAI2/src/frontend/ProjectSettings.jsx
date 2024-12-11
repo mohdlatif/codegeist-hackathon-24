@@ -52,6 +52,9 @@ const App = () => {
     systemPrompt: "",
   });
   const [openAiInputsUpdated, setOpenAiInputsUpdated] = useState(false);
+  const [playgroundInput, setPlaygroundInput] = useState("");
+  const [aiResponse, setAiResponse] = useState("");
+  const [isAiLoading, setIsAiLoading] = useState(false);
 
   useEffect(() => {
     invoke("getPages")
@@ -427,6 +430,22 @@ const App = () => {
     }
   };
 
+  const handleTestAi = async () => {
+    setIsAiLoading(true);
+    setAiResponse("");
+    try {
+      const response = await invoke("testAiPlayground", {
+        question: playgroundInput,
+      });
+      setAiResponse(response.answer);
+    } catch (error) {
+      console.error("AI test error:", error);
+      // setErrorMessage("Failed to test AI: " + error.message);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
   if (error) {
     return (
       <Stack space="space.400">
@@ -637,26 +656,6 @@ const App = () => {
             >
               Sync Pages to Vector DB
             </LoadingButton>
-
-            {/* Success Message */}
-            {successMessage && (
-              <Box
-                backgroundColor="color.background.success.subtle"
-                padding="space.150"
-              >
-                <Text color="color.text.success">✓ {successMessage}</Text>
-              </Box>
-            )}
-
-            {/* Error Message */}
-            {errorMessage && (
-              <Box
-                backgroundColor="color.background.danger.subtle"
-                padding="space.150"
-              >
-                <Text color="color.text.danger">✗ {errorMessage}</Text>
-              </Box>
-            )}
           </Stack>
         </Box>
       </Stack>
@@ -780,6 +779,63 @@ const App = () => {
             )}
           </Stack>
         </Box>
+      </Stack>
+      <Stack space="space.075">
+        <Box backgroundColor="color.background.neutral" padding="space.100">
+          <Heading as="h4">AI Playground</Heading>
+        </Box>
+        <Box xcss={xcss({ maxWidth: "600px" })}>
+          <Stack space="space.100">
+            <Text>Test the AI response with your question:</Text>
+            <TextArea
+              label="Your Question"
+              value={playgroundInput}
+              onChange={(e) => setPlaygroundInput(e.target.value)}
+              placeholder="Enter your question here..."
+              minimumRows={4}
+            />
+            <LoadingButton
+              appearance="primary"
+              isLoading={isAiLoading}
+              onClick={handleTestAi}
+              isDisabled={!playgroundInput.trim()}
+            >
+              Test AI
+            </LoadingButton>
+
+            {aiResponse && (
+              <Box
+                backgroundColor="color.background.neutral.subtle"
+                padding="space.200"
+              >
+                <Stack space="space.100">
+                  <Strong>AI Response:</Strong>
+                  <Text>{aiResponse}</Text>
+                </Stack>
+              </Box>
+            )}
+          </Stack>
+        </Box>
+
+        {/* Success Message */}
+        {successMessage && (
+          <Box
+            backgroundColor="color.background.success.subtle"
+            padding="space.150"
+          >
+            <Text color="color.text.success">✓ {successMessage}</Text>
+          </Box>
+        )}
+
+        {/* Error Message */}
+        {errorMessage && (
+          <Box
+            backgroundColor="color.background.danger.subtle"
+            padding="space.150"
+          >
+            <Text color="color.text.danger">✗ {errorMessage}</Text>
+          </Box>
+        )}
       </Stack>
     </Stack>
   );

@@ -3,6 +3,7 @@ import { pageResolvers } from "./pageResolvers";
 import { userResolvers } from "./userResolvers";
 import { cloudflareResolvers } from "./cloudflareResolvers";
 import { pageContentResolvers } from "./pageContentResolvers";
+import { aiPlaygroundResolver } from "./aiPlaygroundResolver";
 
 import { vectorizePages } from "./vector/vectorizePages";
 import { testVectorQuery } from "./vector/testVectorQuery";
@@ -58,5 +59,9 @@ resolver.define("initializeVectorIndex", initializeVectorIndex);
 Object.entries(openAiResolvers).forEach(([name, handler]) => {
   resolver.define(name, handler);
 });
+
+/* --------------------- AI Playground ---------------------  */
+// Register AI Playground resolver
+resolver.define("testAiPlayground", aiPlaygroundResolver.testAiPlayground);
 
 export const handler = resolver.getDefinitions();
