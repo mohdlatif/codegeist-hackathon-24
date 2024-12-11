@@ -77,7 +77,7 @@ export async function testVectorQuery({ payload }) {
       topK: searchBody.topK,
     });
 
-    console.log("Search request body:", JSON.stringify(searchBody, null, 2));
+    // console.log("Search request body:", JSON.stringify(searchBody, null, 2));
 
     const searchResponse = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${INDEX_NAME}/query`,
@@ -97,7 +97,7 @@ export async function testVectorQuery({ payload }) {
         status: searchResponse.status,
         statusText: searchResponse.statusText,
         error: errorText,
-        requestBody: searchBody,
+        // requestBody: searchBody,
       });
       return {
         success: false,

@@ -181,45 +181,40 @@ export async function vectorizePages() {
 
     // Handle deletions first
     if (changes.deleted.length > 0) {
-      try {
-        const deleteIds = changes.deleted.map((page) => page.id.toString());
-        console.log("Deleting vectors for pages:", deleteIds);
-
-        const deleteResponse = await fetch(
-          `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${INDEX_NAME}/delete`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ ids: deleteIds }),
-          }
-        );
-
-        const deleteResult = await deleteResponse.json();
-        console.log("Delete response:", deleteResult);
-
-        if (!deleteResult.success) {
-          throw new Error(
-            `Delete operation failed: ${JSON.stringify(deleteResult.errors)}`
-          );
-        }
-
-        vectorizationResults.deleted = {
-          success: true,
-          count: changes.deleted.length,
-          pages: changes.deleted.map((p) => ({ id: p.id, title: p.title })),
-        };
-
-        // Remove deleted pages from previous state
-        deleteIds.forEach((id) => delete previousState[id]);
-      } catch (error) {
-        console.error("Error deleting vectors:", error);
-        vectorizationResults.errors.push(
-          `Failed to delete vectors: ${error.message}`
-        );
-      }
+      // try {
+      //   const deleteIds = changes.deleted.map((page) => page.id.toString());
+      //   console.log("Deleting vectors for pages:", deleteIds);
+      //   const deleteResponse = await fetch(
+      //     `https://api.cloudflare.com/client/v4/accounts/${accountId}/vectorize/v2/indexes/${INDEX_NAME}/delete`,
+      //     {
+      //       method: "POST",
+      //       headers: {
+      //         Authorization: `Bearer ${apiKey}`,
+      //         "Content-Type": "application/json",
+      //       },
+      //       body: JSON.stringify({ ids: deleteIds }),
+      //     }
+      //   );
+      //   const deleteResult = await deleteResponse.json();
+      //   console.log("Delete response:", deleteResult);
+      //   if (!deleteResult.success) {
+      //     throw new Error(
+      //       `Delete operation failed: ${JSON.stringify(deleteResult.errors)}`
+      //     );
+      //   }
+      //   vectorizationResults.deleted = {
+      //     success: true,
+      //     count: changes.deleted.length,
+      //     pages: changes.deleted.map((p) => ({ id: p.id, title: p.title })),
+      //   };
+      //   // Remove deleted pages from previous state
+      //   deleteIds.forEach((id) => delete previousState[id]);
+      // } catch (error) {
+      //   console.error("Error deleting vectors:", error);
+      //   vectorizationResults.errors.push(
+      //     `Failed to delete vectors: ${error.message}`
+      //   );
+      // }
     }
 
     // Process pages that need vectorization (added + updated)
