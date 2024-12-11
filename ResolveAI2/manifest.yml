@@ -47,3 +47,5 @@ app:
   runtime:
     name: nodejs20.x
   id: ari:cloud:ecosystem::app/4309d427-1e88-4867-a8fa-76a71579d7f4
+  licensing:
+    enabled: true

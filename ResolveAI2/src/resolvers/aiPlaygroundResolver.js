@@ -1,5 +1,6 @@
 import { storage, fetch } from "@forge/api";
 
+console.log("aiPlaygroundResolver");
 export const aiPlaygroundResolver = {
   testAiPlayground: async (payload) => {
     try {
@@ -31,9 +32,10 @@ export const aiPlaygroundResolver = {
             messages: [
               {
                 role: "system",
-                content: "You are a helpful AI assistant focused on providing clear, accurate, and concise responses."
+                content:
+                  "You are a helpful AI assistant focused on providing clear, accurate, and concise responses.",
               },
-              { role: "user", content: question }
+              { role: "user", content: question },
             ],
             model: "meta-llama/Llama-3.3-70B-Instruct-Turbo",
             max_tokens: 2500,

@@ -1,6 +1,6 @@
 import api, { route } from "@forge/api";
 import { storage } from "@forge/api";
-
+import validator from "validator";
 // This file handles retrieving and processing content from saved Confluence pages
 // The flow is:
 // 1. getSavedPagesContent() is called by the resolver
